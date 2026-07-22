@@ -381,6 +381,90 @@ The frontend serves before the backend finishes starting. Wait for
 
 ---
 
+## Running under udocker / Termux (Android)
+
+This image also runs on Android via [Termux](https://termux.dev/) + `udocker`
+(e.g. the `HomeAssistant-Termux` scripts), not just real Docker. It mostly works —
+but with one important limitation:
+
+> **udocker/proot cannot install Python packages at runtime.**
+
+Real Docker on a Pi lets Home Assistant `pip install` things on demand. udocker
+uses proot, a much weaker sandbox, and HA's installer (`uv`) fails inside it — in
+several different ways depending on the run, all from the same cause:
+
+```
+Could not persist temporary file /config/.cache/uv/... : Operation not permitted
+failed to open /config/deps/<pkg>.dist-info/METADATA: No such file or directory
+Unexpected netlink response of size 11 on descriptor 11 (address family 16)
+```
+
+`Operation not permitted` (no atomic rename on Android storage), the missing
+`METADATA` (uv can't read back what it wrote), and the `netlink … address family
+16` error (proot blocks `AF_NETLINK`) are all the same problem: **the in-container
+installer doesn't work here.** So anything HA tries to install on demand must be
+provided ahead of time instead.
+
+### The usual culprit: MFA (two-factor auth)
+
+If your account has TOTP two-factor enabled, HA tries to install `pyotp` and
+`PyQRCode` on first boot — and crashes into recovery mode when the install fails:
+
+```
+ERROR [homeassistant.util.package] Unable to install package pyotp==2.9.0: ...
+ERROR [homeassistant.bootstrap] Home Assistant core failed to initialize.
+WARNING [homeassistant.bootstrap] ... Activating recovery mode
+```
+
+These requirements live in HA's source (`auth/mfa_modules/totp.py`), not in any
+integration manifest, so they aren't pre-baked.
+
+### Fix: install the modules into `/config/deps` yourself
+
+HA reads runtime packages from **`/config/deps`**. Both packages are pure Python
+(nothing to compile), so you can drop them in from Termux directly, bypassing the
+broken in-container installer. Point `--target` at the `deps` folder inside the
+config directory that udocker maps to `/config`:
+
+```bash
+# from your HA config dir (the one mounted as /config); create deps/ if absent
+mkdir -p config/deps
+pip install --target config/deps pyotp==2.9.0 PyQRCode==1.2.1
+```
+
+If Termux's `pip` won't cooperate, download the wheels and unzip them (a `.whl`
+is just a zip):
+
+```bash
+mkdir -p config/deps && cd config/deps
+pip download --no-deps pyotp==2.9.0 PyQRCode==1.2.1
+for w in *.whl; do unzip -o "$w" && rm "$w"; done
+```
+
+Restart HA. It will find the packages already present and skip the installer.
+
+### The same trick for anything else HA can't install
+
+If a **HACS custom component** or any other integration crashes with a similar
+"Unable to install package X" under udocker, install `X` into `config/deps` the
+same way. If `X` needs compiling (not pure Python), it won't work under Termux at
+all — it has to be baked into the image at build time instead (see Option B), or
+run on real Docker.
+
+### Better: bake it into the image
+
+So users never hit this, the published image pre-installs the MFA modules:
+
+```dockerfile
+RUN pip install pyotp==2.9.0 PyQRCode==1.2.1 -c /tmp/constraints.txt \
+      || pip install pyotp PyQRCode
+```
+
+If you maintain your own build, add any package your setup installs at runtime to
+the image the same way — on udocker/Termux, pre-baking is the only reliable path.
+
+---
+
 ## Reality check
 
 This buys you time; it isn't a permanent answer. When some upstream dependency
