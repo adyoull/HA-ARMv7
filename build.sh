@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Cross-build Home Assistant for ARMv7 (32-bit) on an x86/Apple-Silicon Mac.
+# Copyright (C) 2026 Andrew Youll
 #
 #   ./build.sh              # build latest HA from source for armv7
 #   ./build.sh 2026.5.4     # build a specific version

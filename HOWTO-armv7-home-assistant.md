@@ -1,7 +1,7 @@
 # Running current Home Assistant on 32-bit ARM (armv7) — 2026 edition
 
 **TL;DR:** Home Assistant stopped publishing armv7 images after `2025.11.3`. You
-can still run a *current* release (2026.7.2 and beyond) on a Raspberry Pi 2/3 or
+can still run a *current* release (2026.7.3 and beyond) on a Raspberry Pi 2/3 or
 other armv7 board. Either pull a prebuilt image, or rebuild it yourself from the
 Dockerfile below. Both are covered here.
 
@@ -33,7 +33,7 @@ Nothing in Home Assistant itself is 64-bit-only. It's a build problem.
 ## Option A — Pull the prebuilt image
 
 ```bash
-docker pull ghcr.io/adyoull/ha-armv7:2026.7.2
+docker pull ghcr.io/adyoull/ha-armv7:2026.7.3-r1
 ```
 
 `docker-compose.yml`:
@@ -41,7 +41,7 @@ docker pull ghcr.io/adyoull/ha-armv7:2026.7.2
 ```yaml
 services:
   homeassistant:
-    image: ghcr.io/adyoull/ha-armv7:2026.7.2
+    image: ghcr.io/adyoull/ha-armv7:2026.7.3-r1
     container_name: homeassistant
     restart: unless-stopped
     network_mode: host          # required for mDNS/SSDP discovery
@@ -92,8 +92,8 @@ image. **No arm64 binaries are used**; it's a parts list.
 
 ```bash
 docker run --rm --platform linux/arm64 --entrypoint python \
-  ghcr.io/home-assistant/home-assistant:2026.7.2 \
-  -m pip freeze > official-2026.7.2.txt
+  ghcr.io/home-assistant/home-assistant:2026.7.3 \
+  -m pip freeze > official-2026.7.3.txt
 ```
 
 ### 2. `resolve_reqs.py`
@@ -183,17 +183,18 @@ if __name__ == "__main__":
 ARG PY_TAG=3.14-slim-trixie
 FROM python:${PY_TAG}
 
-ARG HA_VERSION=2026.7.2
+ARG HA_VERSION=2026.7.3
+ARG BUILD_JOBS=1        # compile parallelism; raise on a beefy cross-build host
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_ROOT_USER_ACTION=ignore \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    MAKEFLAGS=-j1 \
-    CARGO_BUILD_JOBS=1 \
-    NPY_NUM_BUILD_JOBS=1 \
-    UV_CONCURRENT_BUILDS=1 \
+    MAKEFLAGS=-j${BUILD_JOBS} \
+    CARGO_BUILD_JOBS=${BUILD_JOBS} \
+    NPY_NUM_BUILD_JOBS=${BUILD_JOBS} \
+    UV_CONCURRENT_BUILDS=${BUILD_JOBS} \
     HOME=/config
 
 # Toolchain is intentionally KEPT in the final image: HACS custom components
@@ -235,7 +236,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends yasm nasm xz-ut
  && cd /tmp/ffmpeg \
  && ./configure --prefix=/usr/local --enable-shared --disable-static \
       --enable-gpl --enable-version3 --disable-doc --disable-debug \
- && make -j1 && make install && ldconfig \
+ && make -j${BUILD_JOBS} && make install && ldconfig \
  && rm -rf /tmp/ffmpeg /tmp/ffmpeg.tar.xz \
  && ffmpeg -version | head -1
 
@@ -247,7 +248,7 @@ ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig \
 #   --build-arg INTEGRATIONS="default_config zha mqtt hue shelly"
 ARG INTEGRATIONS="default_config met radio_browser"
 
-ARG CONSTRAINTS=official-2026.7.2.txt
+ARG CONSTRAINTS=official-2026.7.3.txt
 COPY ${CONSTRAINTS} /tmp/constraints.raw.txt
 
 # pip rejects editable/VCS/URL entries in a constraints file, and pip freeze emits
@@ -284,6 +285,21 @@ RUN for pkg in pymicro_vad pymicro_features pyspeex-noise webrtc-noise-gain; do 
  && python -c "from pymicro_vad import MicroVad; MicroVad(); print('pymicro_vad OK')" \
  && python -c "import av; print('PyAV OK', av.__version__)"
 
+# --- pyatv / Apple TV ---------------------------------------------------------
+# apple_tv -> pyatv -> miniaudio pins cffi==1.15.0, which won't compile on Python
+# 3.14. Install a modern cffi first, then build with isolation off. Skip if you
+# don't use Apple TV.
+RUN pip install "cffi>=1.17.1" -c /tmp/constraints.txt \
+ && pip install --no-build-isolation miniaudio \
+ && pip install --no-build-isolation "pyatv==0.18.0" -c /tmp/constraints.txt
+
+# --- auth MFA modules ---------------------------------------------------------
+# TOTP requirements live in HA source (auth/mfa_modules/totp.py), not a manifest,
+# so the resolver misses them. Bake them in so HA never installs at runtime -
+# which fails under udocker/Termux.
+RUN pip install pyotp==2.9.0 PyQRCode==1.2.1 -c /tmp/constraints.txt \
+      || pip install pyotp PyQRCode
+
 # --- go2rtc -------------------------------------------------------------------
 # HA's go2rtc integration shells out to a binary the official image bundles.
 RUN curl -fsSL -o /usr/local/bin/go2rtc \
@@ -302,22 +318,32 @@ docker run --privileged --rm tonistiigi/binfmt --install arm   # QEMU handlers
 docker buildx create --name ha-armv7-builder --use
 
 docker buildx build --platform linux/arm/v7 \
-  --build-arg HA_VERSION=2026.7.2 \
+  --build-arg HA_VERSION=2026.7.3 \
+  --build-arg BUILD_JOBS=8 \
   --build-arg INTEGRATIONS="default_config zha hue shelly mqtt" \
-  -t ha-armv7:2026.7.2 --load .
+  -t ha-armv7:2026.7.3 --load .
 ```
 
 Adjust `INTEGRATIONS` to what you actually run. More integrations = longer build
 and a bigger image, but everything is then pre-compiled and the Pi never has to.
 
+`BUILD_JOBS` sets compile parallelism (default 1). On a low-RAM host leave it at 1;
+on a beefy cross-build machine set it to ~1 job per 2 GB RAM (`8` on a 32 GB host)
+to cut hours off. Drop it back down if a compile dies with `signal: killed` — that
+is OOM.
+
+Note: changing `HA_VERSION` invalidates the Docker layer cache at the HA-core
+install and recompiles everything below it. Rebuilding the *same* version (e.g. to
+add a package) reuses the cache and only runs the changed steps.
+
 ### 5. Ship it to the Pi
 
 ```bash
-docker save ha-armv7:2026.7.2 | gzip -1 > ha-armv7-2026.7.2.tar.gz
-scp ha-armv7-2026.7.2.tar.gz pi@<pi-ip>:~/
+docker save ha-armv7:2026.7.3 | gzip -1 > ha-armv7-2026.7.3.tar.gz
+scp ha-armv7-2026.7.3.tar.gz pi@<pi-ip>:~/
 
 # on the Pi
-gunzip -c ha-armv7-2026.7.2.tar.gz | docker load
+gunzip -c ha-armv7-2026.7.3.tar.gz | docker load
 ```
 
 ---
@@ -342,7 +368,7 @@ docker pull --platform linux/arm/v7 \
 
 **Test the restore on your build machine first.** Take a backup from your existing
 install, boot the new image with an empty config dir, and restore into it. If a
-2025.11.3 backup restores cleanly into 2026.7.2 there, the migration is de-risked
+2025.11.3 backup restores cleanly into 2026.7.3 there, the migration is de-risked
 before you touch the Pi. (Restoring *forward* is fine; HA won't restore a newer
 backup into an older version.)
 
@@ -368,8 +394,17 @@ A C++ extension got linked without libstdc++. Rebuild it with
 **`implicit declaration of function 'sws_free_context'` when building PyAV.**
 Your FFmpeg is 7.x; current PyAV needs FFmpeg 8. Build FFmpeg 8 (see Dockerfile).
 
-**Build killed with no error.**
-OOM. Raise Docker's memory limit to 8 GB+.
+**Build killed with no error / `signal: killed` mid-compile.**
+OOM. Raise Docker's memory limit, or lower `BUILD_JOBS` (each parallel job needs
+~2 GB for the heavy compiles).
+
+**`apple_tv` never sets up / `Failed to build miniaudio` / repeating `Task
+exception was never retrieved`.**
+`pyatv` → `miniaudio` pins `cffi==1.15.0`, which won't compile on Python 3.14
+(`implicit declaration of function`). Install a modern cffi first, then build with
+build isolation off — the Dockerfile does this:
+`pip install "cffi>=1.17.1" && pip install --no-build-isolation miniaudio pyatv`.
+If you don't use Apple TV, just delete/ignore the config entry instead.
 
 **`ModuleNotFoundError` for some package at boot.**
 An integration requirement the resolver missed. Add the integration to
@@ -474,3 +509,7 @@ will help.
 The real fix, if your hardware allows it: **a Pi 3 can run 64-bit Raspberry Pi
 OS.** Reflash to arm64 and you're back on officially supported images forever. The
 build above is for when you can't or won't do that yet.
+
+---
+
+_Copyright (C) 2026 Andrew Youll._

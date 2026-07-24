@@ -1,3 +1,4 @@
+# Copyright (C) 2026 Andrew Youll
 services:
   homeassistant:
     image: ha-armv7:latest

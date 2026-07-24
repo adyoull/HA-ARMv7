@@ -1,23 +1,31 @@
 # syntax=docker/dockerfile:1
 #
 # Home Assistant Core - unofficial ARMv7 (32-bit) build
-# HA dropped official armv7 images after 2025.12. This rebuilds from source.
+# HA dropped official armv7 images after 2025.11.3. This rebuilds from source.
+#
+# Copyright (C) 2026 Andrew Youll
 #
 ARG PY_TAG=3.14-slim-trixie
 FROM python:${PY_TAG}
 
 ARG HA_VERSION=2026.7.2
 
+# Build parallelism. Default 1 is safe for a low-RAM host (e.g. building on the
+# Pi itself). On a beefy cross-build host set it high:
+#   --build-arg BUILD_JOBS=8
+# Rule of thumb under QEMU emulation: ~2 GB RAM per parallel job for the heavy
+# Rust/C compiles (cryptography, pydantic-core). 32 GB host -> 8 is comfortable.
+ARG BUILD_JOBS=1
+
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_ROOT_USER_ACTION=ignore \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    # Keep memory use sane: emulated armv7 + parallel Rust/C builds = OOM
-    MAKEFLAGS=-j1 \
-    CARGO_BUILD_JOBS=1 \
-    NPY_NUM_BUILD_JOBS=1 \
-    UV_CONCURRENT_BUILDS=1 \
+    MAKEFLAGS=-j${BUILD_JOBS} \
+    CARGO_BUILD_JOBS=${BUILD_JOBS} \
+    NPY_NUM_BUILD_JOBS=${BUILD_JOBS} \
+    UV_CONCURRENT_BUILDS=${BUILD_JOBS} \
     HOME=/config
 
 # Build toolchain is intentionally KEPT in the final image.
@@ -64,7 +72,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends yasm nasm xz-ut
       --enable-shared --disable-static \
       --enable-gpl --enable-version3 \
       --disable-doc --disable-debug \
- && make -j1 && make install && ldconfig \
+ && make -j${BUILD_JOBS} && make install && ldconfig \
  && rm -rf /tmp/ffmpeg /tmp/ffmpeg.tar.xz \
  && ffmpeg -version | head -1
 
@@ -135,6 +143,21 @@ RUN for pkg in pymicro_vad pymicro_features pyspeex-noise webrtc-noise-gain; do 
  && echo "--- verifying C++ extensions import" \
  && python -c "from pymicro_vad import MicroVad; MicroVad(); print('pymicro_vad OK')" \
  && python -c "import av; print('PyAV OK', av.__version__, '/ libav', av.library_versions)"
+
+# --- pyatv / Apple TV ---------------------------------------------------------
+# apple_tv needs pyatv, which depends on miniaudio, whose build-system.requires
+# pins an ancient cffi==1.15.0. That cffi predates Python 3.14 and won't compile
+# against its headers:
+#     c/_cffi_backend.c: error: implicit declaration of function ...
+#     error: command '/usr/bin/gcc' failed with exit code 1
+# So on armv7+py3.14 the runtime install loops forever and apple_tv never sets up.
+# Fix: install a MODERN cffi first, then build miniaudio + pyatv with build
+# isolation DISABLED so they use the already-present cffi instead of the pin.
+RUN pip install "cffi>=1.17.1" -c /tmp/constraints.txt \
+ && pip install --no-build-isolation miniaudio \
+ && pip install --no-build-isolation "pyatv==0.18.0" -c /tmp/constraints.txt \
+ && python -c "import pyatv, miniaudio; from importlib.metadata import version; print('pyatv', version('pyatv'), '/ miniaudio', version('miniaudio'))" \
+      || echo "pyatv/miniaudio" >> /etc/ha-armv7-failed-requirements.txt
 
 # --- auth MFA modules ---------------------------------------------------------
 # TOTP MFA requirements live in homeassistant/auth/mfa_modules/totp.py, NOT in
