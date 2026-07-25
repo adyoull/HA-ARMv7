@@ -3,6 +3,15 @@
 Unofficial ARMv7 (32-bit) builds of Home Assistant. All images published to
 `ghcr.io/adyoull/ha-armv7`.
 
+## 2026.7.4-r1 — 2026-07-24
+
+- Rebuilt against Home Assistant **2026.7.4** (upstream patch release).
+- Refreshed dependency pins from the official 2026.7.4 arm64 image.
+- No build-recipe changes; Apple TV (`pyatv`/`miniaudio`), MFA (`pyotp`,
+  `PyQRCode`), FFmpeg 8, and the libstdc++ relink all carried over from r1.
+
+Tags: `2026.7.4-r1`, `2026.7.4`, `latest`
+
 ## 2026.7.3-r1 — 2026-07-24
 
 - Rebuilt against Home Assistant **2026.7.3** (upstream patch release).

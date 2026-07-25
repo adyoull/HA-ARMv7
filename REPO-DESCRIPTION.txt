@@ -1,0 +1,27 @@
+GitHub repository metadata — paste into the repo's "About" panel, or use with
+`gh repo create` / `gh repo edit`.
+
+--------------------------------------------------------------------------------
+Description (short, one line — the "About" field):
+--------------------------------------------------------------------------------
+Unofficial 32-bit ARM (armv7) build of current Home Assistant for Raspberry Pi 2/3 — cross-compiled, since HA dropped official armv7 images after 2025.11.3.
+
+--------------------------------------------------------------------------------
+Suggested topics (tags):
+--------------------------------------------------------------------------------
+home-assistant  armv7  raspberry-pi  docker  32-bit  cross-compilation  homeassistant  armhf  self-hosted
+
+--------------------------------------------------------------------------------
+gh CLI:
+--------------------------------------------------------------------------------
+gh repo edit adyoull/ha-armv7 \
+  --description "Unofficial 32-bit ARM (armv7) build of current Home Assistant for Raspberry Pi 2/3 — cross-compiled, since HA dropped official armv7 images after 2025.11.3." \
+  --add-topic home-assistant --add-topic armv7 --add-topic raspberry-pi \
+  --add-topic docker --add-topic 32-bit --add-topic cross-compilation \
+  --add-topic homeassistant --add-topic armhf --add-topic self-hosted
+
+--------------------------------------------------------------------------------
+Note: keep "unofficial" in the description. It signals to anyone searching that
+this is not a Home Assistant project, which matters for both trust and trademark.
+
+Copyright (C) 2026 Andrew Youll.
