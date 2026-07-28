@@ -44,19 +44,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN pip install --upgrade pip setuptools wheel \
  && pip install uv
 
-# The long one. Expect hours under QEMU: numpy, cryptography, pydantic-core,
-# orjson, aiohttp etc. all compile from source for armv7.
-RUN pip install "homeassistant==${HA_VERSION}"
-
 # --- FFmpeg 8 -----------------------------------------------------------------
-# Debian trixie ships FFmpeg 7.1, but current PyAV (pulled in by `stream` and
-# `onvif`) uses FFmpeg 8 APIs - sws_free_context, opaque struct SwsContext - so
-# it fails to compile against 7.1 headers:
+# Debian trixie ships FFmpeg 7.1, but current PyAV (av==17.x, pulled in by
+# `stream`/`onvif`) uses FFmpeg 8 APIs - sws_free_context, opaque struct
+# SwsContext - so it fails to compile against 7.1 headers:
 #     error: implicit declaration of function 'sws_free_context'
 #     error: invalid use of undefined type 'struct SwsContext'
 # This is NOT an armv7 problem; it fails the same way on x86. Pulling FFmpeg 8
-# from Debian testing would drag in a newer glibc, so build it into /usr/local
-# instead. Placed after the HA core install so that layer stays cached.
+# from Debian testing would drag in a newer glibc, so build it into /usr/local.
+#
+# IMPORTANT: this block is deliberately ABOVE the homeassistant install. FFmpeg
+# doesn't depend on HA, so keeping it here means bumping HA_VERSION does NOT
+# invalidate this layer - FFmpeg compiles once and is cached across every future
+# version bump. (Below the HA install it would recompile on every bump - hours.)
 ARG FFMPEG_VERSION=8.0
 
 RUN apt-get update && apt-get install -y --no-install-recommends yasm nasm xz-utils \
@@ -79,6 +79,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends yasm nasm xz-ut
 # Make sure PyAV's pkg-config finds FFmpeg 8 in /usr/local, not Debian's 7.1
 ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig \
     LD_LIBRARY_PATH=/usr/local/lib
+
+# The long one. Expect hours under QEMU: numpy, cryptography, pydantic-core,
+# orjson, aiohttp etc. all compile from source for armv7.
+RUN pip install "homeassistant==${HA_VERSION}"
 
 # --- integration requirements -------------------------------------------------
 # pip install homeassistant gives you ONLY the core framework. Integrations
