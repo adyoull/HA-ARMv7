@@ -1,7 +1,7 @@
 # Running current Home Assistant on 32-bit ARM (armv7) — 2026 edition
 
 **TL;DR:** Home Assistant stopped publishing armv7 images after `2025.11.3`. You
-can still run a *current* release (2026.7.4 and beyond) on a Raspberry Pi 2/3 or
+can still run a *current* release (2026.8.1 and beyond) on a Raspberry Pi 2/3 or
 other armv7 board. Either pull a prebuilt image, or rebuild it yourself from the
 Dockerfile below. Both are covered here.
 
@@ -33,7 +33,7 @@ Nothing in Home Assistant itself is 64-bit-only. It's a build problem.
 ## Option A — Pull the prebuilt image
 
 ```bash
-docker pull ghcr.io/adyoull/ha-armv7:2026.7.4-r1
+docker pull ghcr.io/adyoull/ha-armv7:2026.8.1-r1
 ```
 
 `docker-compose.yml`:
@@ -41,7 +41,7 @@ docker pull ghcr.io/adyoull/ha-armv7:2026.7.4-r1
 ```yaml
 services:
   homeassistant:
-    image: ghcr.io/adyoull/ha-armv7:2026.7.4-r1
+    image: ghcr.io/adyoull/ha-armv7:2026.8.1-r1
     container_name: homeassistant
     restart: unless-stopped
     network_mode: host          # required for mDNS/SSDP discovery
@@ -92,8 +92,8 @@ image. **No arm64 binaries are used**; it's a parts list.
 
 ```bash
 docker run --rm --platform linux/arm64 --entrypoint python \
-  ghcr.io/home-assistant/home-assistant:2026.7.4 \
-  -m pip freeze > official-2026.7.4.txt
+  ghcr.io/home-assistant/home-assistant:2026.8.1 \
+  -m pip freeze > official-2026.8.1.txt
 ```
 
 ### 2. `resolve_reqs.py`
@@ -183,7 +183,7 @@ if __name__ == "__main__":
 ARG PY_TAG=3.14-slim-trixie
 FROM python:${PY_TAG}
 
-ARG HA_VERSION=2026.7.4
+ARG HA_VERSION=2026.8.1
 ARG BUILD_JOBS=1        # compile parallelism; raise on a beefy cross-build host
 
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -248,7 +248,7 @@ ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig \
 #   --build-arg INTEGRATIONS="default_config zha mqtt hue shelly"
 ARG INTEGRATIONS="default_config met radio_browser"
 
-ARG CONSTRAINTS=official-2026.7.4.txt
+ARG CONSTRAINTS=official-2026.8.1.txt
 COPY ${CONSTRAINTS} /tmp/constraints.raw.txt
 
 # pip rejects editable/VCS/URL entries in a constraints file, and pip freeze emits
@@ -318,10 +318,10 @@ docker run --privileged --rm tonistiigi/binfmt --install arm   # QEMU handlers
 docker buildx create --name ha-armv7-builder --use
 
 docker buildx build --platform linux/arm/v7 \
-  --build-arg HA_VERSION=2026.7.4 \
+  --build-arg HA_VERSION=2026.8.1 \
   --build-arg BUILD_JOBS=8 \
   --build-arg INTEGRATIONS="default_config zha hue shelly mqtt" \
-  -t ha-armv7:2026.7.4 --load .
+  -t ha-armv7:2026.8.1 --load .
 ```
 
 Adjust `INTEGRATIONS` to what you actually run. More integrations = longer build
@@ -339,11 +339,11 @@ add a package) reuses the cache and only runs the changed steps.
 ### 5. Ship it to the Pi
 
 ```bash
-docker save ha-armv7:2026.7.4 | gzip -1 > ha-armv7-2026.7.4.tar.gz
-scp ha-armv7-2026.7.4.tar.gz pi@<pi-ip>:~/
+docker save ha-armv7:2026.8.1 | gzip -1 > ha-armv7-2026.8.1.tar.gz
+scp ha-armv7-2026.8.1.tar.gz pi@<pi-ip>:~/
 
 # on the Pi
-gunzip -c ha-armv7-2026.7.4.tar.gz | docker load
+gunzip -c ha-armv7-2026.8.1.tar.gz | docker load
 ```
 
 ---
@@ -368,7 +368,7 @@ docker pull --platform linux/arm/v7 \
 
 **Test the restore on your build machine first.** Take a backup from your existing
 install, boot the new image with an empty config dir, and restore into it. If a
-2025.11.3 backup restores cleanly into 2026.7.4 there, the migration is de-risked
+2025.11.3 backup restores cleanly into 2026.8.1 there, the migration is de-risked
 before you touch the Pi. (Restoring *forward* is fine; HA won't restore a newer
 backup into an older version.)
 
