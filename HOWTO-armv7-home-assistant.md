@@ -414,6 +414,29 @@ An integration requirement the resolver missed. Add the integration to
 The frontend serves before the backend finishes starting. Wait for
 `Home Assistant initialized` in the log, then reload.
 
+**`no wheels with a matching platform tag` / `no matching distribution` for a
+package you don't recognise.**
+Some packages publish only compiled wheels for other platforms (x86_64, aarch64,
+musl) with **no source distribution** — so there's nothing for the in-image
+toolchain to compile, and they can't be installed on armv7 by any means. When the
+package belongs to an integration you don't actually use (Home Assistant probes
+for hardware via Bluetooth/network discovery whether or not you own it), this is
+**benign log noise** — HA logs the failure and carries on. Example: `bleak-smlight`
+(the SMLIGHT SLZB coordinator client) fails this way but only matters if you own
+an SMLIGHT device. If you *do* own the hardware, the only route is building the
+package from its upstream source in the Dockerfile (`pip install git+https://…`),
+since there's no armv7 wheel or sdist to pull.
+
+**`Failed to parse METADATA file` / `Metadata field Name not found` for an
+installed package.**
+Not a compile problem — the package's `.dist-info/METADATA` is truncated or
+malformed (an interrupted install, or a bad upstream release). HA sees it as
+"installed" but unreadable and retries forever. Clear the broken install and let
+it redo cleanly:
+`docker exec homeassistant rm -rf /usr/local/lib/python3.14/site-packages/<pkg>*.dist-info`
+then restart. If it re-corrupts, the upstream release is bad — pin the component
+to its previous version.
+
 ---
 
 ## Running under udocker / Termux (Android)
