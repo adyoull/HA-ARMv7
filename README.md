@@ -9,7 +9,7 @@ This kit cross-compiles a *current* Home Assistant for armv7 on a Mac (or any
 x86/arm64 Docker host) and produces an image you can run on a Raspberry Pi 2/3
 on a 32-bit OS.
 
-Status: **working.** 2026.8.1 builds, boots, and restores a 2025.11.3 backup. In
+Status: **working.** 2026.8.2 builds, boots, and restores a 2025.11.3 backup. In
 production on a Raspberry Pi 3. Published images: `ghcr.io/adyoull/ha-armv7`.
 
 ## Quick start
@@ -26,13 +26,13 @@ fewer things to go wrong):
 
 ```bash
 docker buildx build --platform linux/arm/v7 \
-  --build-arg HA_VERSION=2026.8.1 \
-  --build-arg CONSTRAINTS=official-2026.8.1.txt \
+  --build-arg HA_VERSION=2026.8.2 \
+  --build-arg CONSTRAINTS=official-2026.8.2.txt \
   --build-arg BUILD_JOBS=8 \
   --build-arg INTEGRATIONS="default_config androidtv_remote backup cast co2signal \
 dlna_dmr dlna_dms duckdns forecast_solar hue ipp met mobile_app modbus nest onvif \
 openuv radio_browser samsungtv shelly sun tuya upnp wiz zha" \
-  -t ha-armv7:2026.8.1 -t ha-armv7:latest --load .
+  -t ha-armv7:2026.8.2 -t ha-armv7:latest --load .
 ```
 
 ## Before you build
@@ -81,7 +81,7 @@ docker run --rm --platform linux/arm64 --entrypoint python \
 ```bash
 rm -rf /tmp/hatest && mkdir -p /tmp/hatest
 docker run -d --name ha-test --platform linux/arm/v7 \
-  -p 8123:8123 -v /tmp/hatest:/config ha-armv7:2026.8.1
+  -p 8123:8123 -v /tmp/hatest:/config ha-armv7:2026.8.2
 docker logs -f ha-test
 ```
 
@@ -91,7 +91,7 @@ if you rush it. Then open `http://localhost:8123`.
 
 **Test the restore, not just onboarding.** Drop a backup into
 `/tmp/hatest/backups/` and restart, or upload it via onboarding. If a 2025.11.3
-backup restores cleanly into 2026.8.1 here, the Pi migration is de-risked.
+backup restores cleanly into 2026.8.2 here, the Pi migration is de-risked.
 
 Verify nothing gets compiled at runtime (this should be empty):
 
@@ -105,19 +105,19 @@ Transfer the image:
 
 ```bash
 # Mac
-docker save ha-armv7:2026.8.1 | gzip -1 > ha-armv7-2026.8.1.tar.gz
-scp ha-armv7-2026.8.1.tar.gz pi@192.168.0.10:~/
+docker save ha-armv7:2026.8.2 | gzip -1 > ha-armv7-2026.8.2.tar.gz
+scp ha-armv7-2026.8.2.tar.gz pi@192.168.0.10:~/
 
 # Pi
-gunzip -c ha-armv7-2026.8.1.tar.gz | docker load
+gunzip -c ha-armv7-2026.8.2.tar.gz | docker load
 docker compose up -d
 ```
 
 Or via a registry:
 
 ```bash
-docker tag ha-armv7:2026.8.1 ghcr.io/<user>/ha-armv7:2026.8.1
-docker push ghcr.io/<user>/ha-armv7:2026.8.1   # needs a classic PAT with write:packages
+docker tag ha-armv7:2026.8.2 ghcr.io/<user>/ha-armv7:2026.8.2
+docker push ghcr.io/<user>/ha-armv7:2026.8.2   # needs a classic PAT with write:packages
 ```
 
 **Add swap on the Pi first.** A 1 GB Pi 2/3 will get OOM-killed compiling HACS

@@ -3,6 +3,16 @@
 Unofficial ARMv7 (32-bit) builds of Home Assistant. All images published to
 `ghcr.io/adyoull/ha-armv7`.
 
+## 2026.8.2-r1 — 2026-08-13
+
+- Rebuilt against Home Assistant **2026.8.2** (upstream patch release).
+- Refreshed dependency pins from the official 2026.8.2 arm64 image.
+- Docs: troubleshooting notes for binary-only packages with no armv7 sdist
+  (e.g. `bleak-smlight` — benign unless you own the device) and corrupted
+  `.dist-info/METADATA` installs (e.g. `midea-lan`).
+
+Tags: `2026.8.2-r1`, `2026.8.2`, `latest`
+
 ## 2026.8.1-r1 — 2026-08-08
 
 - Rebuilt against Home Assistant **2026.8.1** (upstream patch release).
