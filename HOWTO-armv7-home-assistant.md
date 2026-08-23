@@ -1,7 +1,7 @@
 # Running current Home Assistant on 32-bit ARM (armv7) — 2026 edition
 
 **TL;DR:** Home Assistant stopped publishing armv7 images after `2025.11.3`. You
-can still run a *current* release (2026.8.2 and beyond) on a Raspberry Pi 2/3 or
+can still run a *current* release (2026.8.3 and beyond) on a Raspberry Pi 2/3 or
 other armv7 board. Either pull a prebuilt image, or rebuild it yourself from the
 Dockerfile below. Both are covered here.
 
@@ -33,7 +33,7 @@ Nothing in Home Assistant itself is 64-bit-only. It's a build problem.
 ## Option A — Pull the prebuilt image
 
 ```bash
-docker pull ghcr.io/adyoull/ha-armv7:2026.8.2-r1
+docker pull ghcr.io/adyoull/ha-armv7:2026.8.3-r1
 ```
 
 `docker-compose.yml`:
@@ -41,7 +41,7 @@ docker pull ghcr.io/adyoull/ha-armv7:2026.8.2-r1
 ```yaml
 services:
   homeassistant:
-    image: ghcr.io/adyoull/ha-armv7:2026.8.2-r1
+    image: ghcr.io/adyoull/ha-armv7:2026.8.3-r1
     container_name: homeassistant
     restart: unless-stopped
     network_mode: host          # required for mDNS/SSDP discovery
@@ -92,8 +92,8 @@ image. **No arm64 binaries are used**; it's a parts list.
 
 ```bash
 docker run --rm --platform linux/arm64 --entrypoint python \
-  ghcr.io/home-assistant/home-assistant:2026.8.2 \
-  -m pip freeze > official-2026.8.2.txt
+  ghcr.io/home-assistant/home-assistant:2026.8.3 \
+  -m pip freeze > official-2026.8.3.txt
 ```
 
 ### 2. `resolve_reqs.py`
@@ -183,7 +183,7 @@ if __name__ == "__main__":
 ARG PY_TAG=3.14-slim-trixie
 FROM python:${PY_TAG}
 
-ARG HA_VERSION=2026.8.2
+ARG HA_VERSION=2026.8.3
 ARG BUILD_JOBS=1        # compile parallelism; raise on a beefy cross-build host
 
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -248,7 +248,7 @@ ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig \
 #   --build-arg INTEGRATIONS="default_config zha mqtt hue shelly"
 ARG INTEGRATIONS="default_config met radio_browser"
 
-ARG CONSTRAINTS=official-2026.8.2.txt
+ARG CONSTRAINTS=official-2026.8.3.txt
 COPY ${CONSTRAINTS} /tmp/constraints.raw.txt
 
 # pip rejects editable/VCS/URL entries in a constraints file, and pip freeze emits
@@ -318,10 +318,10 @@ docker run --privileged --rm tonistiigi/binfmt --install arm   # QEMU handlers
 docker buildx create --name ha-armv7-builder --use
 
 docker buildx build --platform linux/arm/v7 \
-  --build-arg HA_VERSION=2026.8.2 \
+  --build-arg HA_VERSION=2026.8.3 \
   --build-arg BUILD_JOBS=8 \
   --build-arg INTEGRATIONS="default_config zha hue shelly mqtt" \
-  -t ha-armv7:2026.8.2 --load .
+  -t ha-armv7:2026.8.3 --load .
 ```
 
 Adjust `INTEGRATIONS` to what you actually run. More integrations = longer build
@@ -339,11 +339,11 @@ add a package) reuses the cache and only runs the changed steps.
 ### 5. Ship it to the Pi
 
 ```bash
-docker save ha-armv7:2026.8.2 | gzip -1 > ha-armv7-2026.8.2.tar.gz
-scp ha-armv7-2026.8.2.tar.gz pi@<pi-ip>:~/
+docker save ha-armv7:2026.8.3 | gzip -1 > ha-armv7-2026.8.3.tar.gz
+scp ha-armv7-2026.8.3.tar.gz pi@<pi-ip>:~/
 
 # on the Pi
-gunzip -c ha-armv7-2026.8.2.tar.gz | docker load
+gunzip -c ha-armv7-2026.8.3.tar.gz | docker load
 ```
 
 ---
@@ -359,6 +359,10 @@ sudo sed -i 's/^CONF_SWAPSIZE=.*/CONF_SWAPSIZE=2048/' /etc/dphys-swapfile
 sudo dphys-swapfile setup && sudo dphys-swapfile swapon
 ```
 
+This 2 GB disk swap is the safety net for the one-time first-boot compile. For
+steady-state running, add `zram` on top (see *Performance tuning on the Pi*
+below) — it's faster and spares the SD card. Keep this disk swap as overflow.
+
 **Keep the last official image as a rollback:**
 
 ```bash
@@ -368,9 +372,83 @@ docker pull --platform linux/arm/v7 \
 
 **Test the restore on your build machine first.** Take a backup from your existing
 install, boot the new image with an empty config dir, and restore into it. If a
-2025.11.3 backup restores cleanly into 2026.8.2 there, the migration is de-risked
+2025.11.3 backup restores cleanly into 2026.8.3 there, the migration is de-risked
 before you touch the Pi. (Restoring *forward* is fine; HA won't restore a newer
 backup into an older version.)
+
+---
+
+## Performance tuning on the Pi
+
+Home Assistant on a 1 GB Cortex-A53 (Pi 2/3) is **I/O-bound, not CPU-bound**. The
+biggest wins are storage and database, not the image. In rough order of impact:
+
+### 1. Boot from a USB SSD, not the SD card
+
+The single largest responsiveness improvement. HA's constant database writes are
+what makes an SD-card Pi feel sluggish, and they wear the card out. A cheap USB
+SSD is night-and-day. If you must stay on SD, use a high-endurance A2 card.
+
+### 2. Stop recording camera / noisy entities
+
+The `recorder` writes every state change to disk. ONVIF cameras and their motion
+events are pure churn — you never need their history. Excluding them cuts disk
+writes dramatically. In `configuration.yaml`:
+
+```yaml
+recorder:
+  purge_keep_days: 7          # default is 10; lower = smaller DB, less I/O
+  commit_interval: 30         # default 5s; batch writes, easier on the card
+  exclude:
+    domains:
+      - camera                # camera state history is useless
+      - update
+    entity_globs:
+      - sensor.*_uptime
+      - sensor.*_last_seen
+    entities:
+      - binary_sensor.onvif_motion   # add your actual ONVIF motion entity IDs
+      - binary_sensor.onvif_cell_motion_detection
+```
+
+Find your real ONVIF entity IDs under Developer Tools → States (filter "onvif"),
+and add the motion / event ones to `entities`. For a much bigger win on a busy
+setup, move the recorder to **MariaDB on another machine** entirely.
+
+### 3. Use zram instead of SD-card swap
+
+`zram` is a compressed swap device in RAM — faster than swapping to the SD card,
+and it doesn't wear the card. It's the better primary swap on a Pi. Note it adds
+*effective* RAM by compressing cold pages; it doesn't add real capacity, so keep
+a small disk swap as overflow for the heavy first-boot HACS compiles.
+
+```bash
+sudo apt install zram-tools
+# /etc/default/zramswap
+echo 'ALGO=zstd'      | sudo tee /etc/default/zramswap
+echo 'PERCENT=150'    | sudo tee -a /etc/default/zramswap   # ~1.5x RAM, compressed
+sudo systemctl restart zramswap
+```
+
+Give zram a higher priority than the disk swap so it's used first:
+
+```bash
+swapon --show     # zram should show higher Prio than /var/swap
+```
+
+Keep a modest `dphys-swapfile` (say 1 GB) as overflow — during a big HACS
+dependency compile the Pi can still exceed RAM+zram, and hitting a hard OOM kills
+the build.
+
+### 4. Trim what loads
+
+Every integration costs RAM. Remove ones you don't use, set logging to `warning`
+(`logger: default: warning`), and if you don't use voice assistants, the
+`assist`/`micro_vad` stack is loading for nothing.
+
+**Honest ceiling:** these help at the margins and make a Pi 3 genuinely usable,
+but a 1 GB armv7 board running full HA plus HACS custom components is near its
+limits regardless. 64-bit + newer hardware remains the durable answer.
 
 ---
 
@@ -436,6 +514,17 @@ it redo cleanly:
 `docker exec homeassistant rm -rf /usr/local/lib/python3.14/site-packages/<pkg>*.dist-info`
 then restart. If it re-corrupts, the upstream release is bad — pin the component
 to its previous version.
+
+**`av/container/pyio.py:40: 'seek_func' redeclared` when building PyAV.**
+A new Cython release (3.1.7+) rejects a redeclaration in PyAV `av==17.0.1`'s
+source, so `av` no longer compiles from source. This hits anyone building PyAV
+17.0.1 from source; armv7 is just the only arch with no prebuilt `av` wheel to
+fall back on. Fix: patch the sdist with av 18.1's one-liner (drop the redundant
+type annotation on line 40, `seek_func: seek_func_t = pyio_seek` →
+`seek_func = pyio_seek`) and build with `--no-build-isolation`. This build does it
+automatically in `patch_av.sh` — **fetch the sdist with curl, not `pip download`**,
+because `pip download --no-binary` runs the build hook on the *un-patched* source
+and fails before you can patch it.
 
 ---
 

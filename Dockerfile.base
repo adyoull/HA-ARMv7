@@ -1,0 +1,90 @@
+# syntax=docker/dockerfile:1
+#
+# ha-armv7-base : Python 3.14 + build toolchain + FFmpeg 8, for armv7 (32-bit).
+# Copyright (C) 2026 Andrew Youll
+#
+# This is the SLOW, STABLE half of the build. It contains everything that does
+# NOT depend on the Home Assistant version - the apt toolchain and the FFmpeg 8
+# compile. Build it ONCE, tag it, and the app image (Dockerfile) builds FROM it.
+# Because it's a separate image, a Home Assistant version bump can never touch
+# FFmpeg - it's physically in a different image, immune to cache eviction, Docker
+# restarts, and buildx pruning.
+#
+# Rebuild this only when you want to move FFmpeg, the Python base, or the system
+# libraries. Day-to-day HA version bumps don't need it.
+#
+#   docker buildx build --platform linux/arm/v7 -f Dockerfile.base \
+#     --build-arg BUILD_JOBS=8 -t ha-armv7-base:1 --load .
+#
+ARG PY_TAG=3.14-slim-trixie
+FROM python:${PY_TAG}
+
+ARG BUILD_JOBS=1
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_ROOT_USER_ACTION=ignore \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    MAKEFLAGS=-j${BUILD_JOBS} \
+    CARGO_BUILD_JOBS=${BUILD_JOBS} \
+    NPY_NUM_BUILD_JOBS=${BUILD_JOBS} \
+    UV_CONCURRENT_BUILDS=${BUILD_JOBS} \
+    HOME=/config
+
+# Build toolchain is intentionally KEPT in the final image.
+# HA installs integration dependencies at runtime, and on armv7 there are no
+# prebuilt wheels for py3.14 - so it must be able to compile on the device.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      build-essential pkg-config autoconf cmake git curl ca-certificates \
+      rustc cargo \
+      libssl-dev libffi-dev zlib1g-dev libjpeg-dev libturbojpeg0 \
+      libxml2-dev libxslt1-dev libudev-dev libpcap0.8t64 \
+      libavformat-dev libavcodec-dev libavdevice-dev libavutil-dev \
+      libswscale-dev libswresample-dev libavfilter-dev ffmpeg \
+      libgammu-dev bluez iputils-ping nmap tzdata \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --upgrade pip setuptools wheel \
+ && pip install uv
+
+# Cython lives in the base because Cython 3.1.x has NO armv7 wheel - pip compiles
+# it from source (~15+ min under emulation). Building it here means it's compiled
+# ONCE and cached, so per-version app builds (which build PyAV with
+# --no-build-isolation against this Cython) don't recompile it every time.
+RUN pip install "cython<4" "setuptools>=77" wheel \
+ && python -c "import Cython; print('Cython', Cython.__version__)"
+
+# --- FFmpeg 8 -----------------------------------------------------------------
+# Debian trixie ships FFmpeg 7.1, but current PyAV (av==17.x, pulled in by
+# `stream`/`onvif`) uses FFmpeg 8 APIs - sws_free_context, opaque struct
+# SwsContext - so it fails to compile against 7.1 headers:
+#     error: implicit declaration of function 'sws_free_context'
+#     error: invalid use of undefined type 'struct SwsContext'
+# This is NOT an armv7 problem; it fails the same way on x86. Pulling FFmpeg 8
+# from Debian testing would drag in a newer glibc, so build it into /usr/local.
+ARG FFMPEG_VERSION=8.0
+
+RUN apt-get update && apt-get install -y --no-install-recommends yasm nasm xz-utils \
+ && apt-get purge -y \
+      libavformat-dev libavcodec-dev libavdevice-dev libavutil-dev \
+      libswscale-dev libswresample-dev libavfilter-dev \
+ && rm -rf /var/lib/apt/lists/* \
+ && curl -fsSL "https://ffmpeg.org/releases/ffmpeg-${FFMPEG_VERSION}.tar.xz" -o /tmp/ffmpeg.tar.xz \
+ && mkdir -p /tmp/ffmpeg && tar xf /tmp/ffmpeg.tar.xz -C /tmp/ffmpeg --strip-components=1 \
+ && cd /tmp/ffmpeg \
+ && ./configure \
+      --prefix=/usr/local \
+      --enable-shared --disable-static \
+      --enable-gpl --enable-version3 \
+      --disable-doc --disable-debug \
+ && make -j${BUILD_JOBS} && make install && ldconfig \
+ && rm -rf /tmp/ffmpeg /tmp/ffmpeg.tar.xz \
+ && ffmpeg -version | head -1
+
+# Make sure PyAV's pkg-config finds FFmpeg 8 in /usr/local, not Debian's 7.1
+ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig \
+    LD_LIBRARY_PATH=/usr/local/lib
+
+LABEL org.opencontainers.image.title="ha-armv7-base" \
+      org.opencontainers.image.description="Python 3.14 + toolchain + FFmpeg 8 base for unofficial armv7 Home Assistant"

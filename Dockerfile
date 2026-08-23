@@ -5,82 +5,24 @@
 #
 # Copyright (C) 2026 Andrew Youll
 #
-ARG PY_TAG=3.14-slim-trixie
-FROM python:${PY_TAG}
+# This is the FAST half. It builds FROM ha-armv7-base (Python 3.14 + toolchain +
+# FFmpeg 8), which contains everything version-independent. A Home Assistant
+# version bump only rebuilds the layers below - FFmpeg is in the base image and
+# is never touched. Build the base once:
+#   docker buildx build --platform linux/arm/v7 -f Dockerfile.base \
+#     --build-arg BUILD_JOBS=8 -t ha-armv7-base:1 --load .
+#
+ARG BASE=ghcr.io/adyoull/ha-armv7-base:1
+FROM ${BASE}
 
-ARG HA_VERSION=2026.7.2
-
-# Build parallelism. Default 1 is safe for a low-RAM host (e.g. building on the
-# Pi itself). On a beefy cross-build host set it high:
-#   --build-arg BUILD_JOBS=8
-# Rule of thumb under QEMU emulation: ~2 GB RAM per parallel job for the heavy
-# Rust/C compiles (cryptography, pydantic-core). 32 GB host -> 8 is comfortable.
 ARG BUILD_JOBS=1
 
-ENV DEBIAN_FRONTEND=noninteractive \
-    PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1 \
-    PIP_ROOT_USER_ACTION=ignore \
-    PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    MAKEFLAGS=-j${BUILD_JOBS} \
-    CARGO_BUILD_JOBS=${BUILD_JOBS} \
-    NPY_NUM_BUILD_JOBS=${BUILD_JOBS} \
-    UV_CONCURRENT_BUILDS=${BUILD_JOBS} \
-    HOME=/config
+# HA_VERSION is the first thing that changes per build, so everything below this
+# line rebuilds on a version bump - and nothing above it (all in the base image)
+# does.
+ARG HA_VERSION=2026.7.2
 
-# Build toolchain is intentionally KEPT in the final image.
-# HA installs integration dependencies at runtime, and on armv7 there are no
-# prebuilt wheels for py3.14 - so it must be able to compile on the device.
-RUN apt-get update && apt-get install -y --no-install-recommends \
-      build-essential pkg-config autoconf cmake git curl ca-certificates \
-      rustc cargo \
-      libssl-dev libffi-dev zlib1g-dev libjpeg-dev libturbojpeg0 \
-      libxml2-dev libxslt1-dev libudev-dev libpcap0.8t64 \
-      libavformat-dev libavcodec-dev libavdevice-dev libavutil-dev \
-      libswscale-dev libswresample-dev libavfilter-dev ffmpeg \
-      libgammu-dev bluez iputils-ping nmap tzdata \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN pip install --upgrade pip setuptools wheel \
- && pip install uv
-
-# --- FFmpeg 8 -----------------------------------------------------------------
-# Debian trixie ships FFmpeg 7.1, but current PyAV (av==17.x, pulled in by
-# `stream`/`onvif`) uses FFmpeg 8 APIs - sws_free_context, opaque struct
-# SwsContext - so it fails to compile against 7.1 headers:
-#     error: implicit declaration of function 'sws_free_context'
-#     error: invalid use of undefined type 'struct SwsContext'
-# This is NOT an armv7 problem; it fails the same way on x86. Pulling FFmpeg 8
-# from Debian testing would drag in a newer glibc, so build it into /usr/local.
-#
-# IMPORTANT: this block is deliberately ABOVE the homeassistant install. FFmpeg
-# doesn't depend on HA, so keeping it here means bumping HA_VERSION does NOT
-# invalidate this layer - FFmpeg compiles once and is cached across every future
-# version bump. (Below the HA install it would recompile on every bump - hours.)
-ARG FFMPEG_VERSION=8.0
-
-RUN apt-get update && apt-get install -y --no-install-recommends yasm nasm xz-utils \
- && apt-get purge -y \
-      libavformat-dev libavcodec-dev libavdevice-dev libavutil-dev \
-      libswscale-dev libswresample-dev libavfilter-dev \
- && rm -rf /var/lib/apt/lists/* \
- && curl -fsSL "https://ffmpeg.org/releases/ffmpeg-${FFMPEG_VERSION}.tar.xz" -o /tmp/ffmpeg.tar.xz \
- && mkdir -p /tmp/ffmpeg && tar xf /tmp/ffmpeg.tar.xz -C /tmp/ffmpeg --strip-components=1 \
- && cd /tmp/ffmpeg \
- && ./configure \
-      --prefix=/usr/local \
-      --enable-shared --disable-static \
-      --enable-gpl --enable-version3 \
-      --disable-doc --disable-debug \
- && make -j${BUILD_JOBS} && make install && ldconfig \
- && rm -rf /tmp/ffmpeg /tmp/ffmpeg.tar.xz \
- && ffmpeg -version | head -1
-
-# Make sure PyAV's pkg-config finds FFmpeg 8 in /usr/local, not Debian's 7.1
-ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig \
-    LD_LIBRARY_PATH=/usr/local/lib
-
-# The long one. Expect hours under QEMU: numpy, cryptography, pydantic-core,
+# The long one. Expect a while under QEMU: numpy, cryptography, pydantic-core,
 # orjson, aiohttp etc. all compile from source for armv7.
 RUN pip install "homeassistant==${HA_VERSION}"
 
@@ -128,6 +70,27 @@ RUN python /tmp/resolve_reqs.py ${INTEGRATIONS} > /tmp/reqs.txt \
       cat /etc/ha-armv7-failed-requirements.txt; \
     fi
 
+# --- PyAV (av) against the base image's FFmpeg 8 ------------------------------
+# av has no armv7 wheel, so it compiles from source and must find the FFmpeg 8
+# we built into /usr/local (in the base image) via pkg-config. If it's pulled in
+# the big batch above and the link fails, the error scrolls past and av ends up
+# missing. Build it explicitly here with visible output and a hard check, so a
+# broken FFmpeg link fails the build loudly instead of silently.
+# The patch: Cython 3.1.7+ rejects the redeclared `seek_func: seek_func_t = ...`
+# in av 17.0.1's pyio.py ("'seek_func' redeclared"). HA pins av==17.0.1, which
+# predates the upstream fix (dropping the redundant annotation, as in av 18.1).
+# We download the sdist, apply that same one-line fix, then build with
+# --no-build-isolation so it uses the Cython already in the base image (no ~15min
+# recompile) and links against the base image's FFmpeg 8.
+# NB: no `#` comments INSIDE the RUN below - Docker's line-continuation parser
+# mangles them and silently breaks the && chain.
+COPY patch_av.sh /tmp/patch_av.sh
+RUN echo "--- pkg-config sees FFmpeg:" \
+ && (pkg-config --modversion libavcodec libavformat libavutil \
+      || echo "!!! pkg-config CANNOT find FFmpeg - PKG_CONFIG_PATH=$PKG_CONFIG_PATH") \
+ && sh /tmp/patch_av.sh /tmp/constraints.txt \
+ && python -c "import av; print('PyAV OK', av.__version__, '/ libav', av.library_versions)"
+
 # --- fix C++ extensions linked without libstdc++ -------------------------------
 # Several HA voice packages ship C++ sources whose setup.py links with `gcc`
 # instead of `g++`. On x86/arm64 they get prebuilt wheels so nobody notices; on
@@ -145,8 +108,7 @@ RUN for pkg in pymicro_vad pymicro_features pyspeex-noise webrtc-noise-gain; do 
       fi; \
     done \
  && echo "--- verifying C++ extensions import" \
- && python -c "from pymicro_vad import MicroVad; MicroVad(); print('pymicro_vad OK')" \
- && python -c "import av; print('PyAV OK', av.__version__, '/ libav', av.library_versions)"
+ && python -c "from pymicro_vad import MicroVad; MicroVad(); print('pymicro_vad OK')"
 
 # --- pyatv / Apple TV ---------------------------------------------------------
 # apple_tv needs pyatv, which depends on miniaudio, whose build-system.requires

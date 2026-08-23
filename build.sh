@@ -115,14 +115,40 @@ else
     || die "Could not pull official arm64 image for $HA_VERSION (does the version exist yet?)"
 fi
 
-# -------------------------------------------------------------------- build ---
-log "Target: HA $HA_VERSION  |  $PLATFORM  |  BUILD_JOBS=$BUILD_JOBS"
-echo "    Bumping HA_VERSION busts the layer cache -> full rebuild (hours)."
-echo "    Give Docker Desktop >=8 GB RAM or it will OOM."
+# --------------------------------------------------------------- base image ---
+# The slow half (toolchain + FFmpeg 8) lives in a separate base image, built
+# once. HA version bumps reuse it - FFmpeg never recompiles. Force a rebuild with
+# REBUILD_BASE=1 (e.g. to move FFmpeg or the Python base).
+#
+# It lives in GHCR, not the local docker store, on purpose: the docker-container
+# buildx driver resolves `FROM` against REGISTRIES, not `docker images`, so a
+# locally-loaded base can't be used as a FROM. Pushing it to GHCR makes it work
+# (and reusable from any build host).
+BASE_TAG="${BASE_TAG:-${REGISTRY}-base:1}"
 setup_qemu
+
+if [[ "${REBUILD_BASE:-0}" == 1 ]] || ! docker manifest inspect "$BASE_TAG" >/dev/null 2>&1; then
+  log "Building + pushing base image $BASE_TAG (toolchain + FFmpeg 8) - one-time, slow"
+  echo "    (requires: docker login ghcr.io)"
+  docker buildx build \
+      --platform "$PLATFORM" \
+      -f Dockerfile.base \
+      --build-arg "BUILD_JOBS=$BUILD_JOBS" \
+      --tag "$BASE_TAG" \
+      --push \
+      . || die "Base image build/push FAILED (are you logged in: docker login ghcr.io ?)"
+else
+  log "Reusing existing base image $BASE_TAG (FFmpeg not recompiled)"
+fi
+
+# -------------------------------------------------------------------- build ---
+log "Target: HA $HA_VERSION  |  $PLATFORM  |  BUILD_JOBS=$BUILD_JOBS  |  base=$BASE_TAG"
+echo "    HA version bump recompiles the Python packages only; FFmpeg is cached"
+echo "    in the base image. Give Docker Desktop >=8 GB RAM or it will OOM."
 
 if docker buildx build \
       --platform "$PLATFORM" \
+      --build-arg "BASE=$BASE_TAG" \
       --build-arg "HA_VERSION=$HA_VERSION" \
       --build-arg "CONSTRAINTS=$CONSTRAINTS" \
       --build-arg "BUILD_JOBS=$BUILD_JOBS" \

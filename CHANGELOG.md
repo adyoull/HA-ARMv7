@@ -3,6 +3,23 @@
 Unofficial ARMv7 (32-bit) builds of Home Assistant. All images published to
 `ghcr.io/adyoull/ha-armv7`.
 
+## 2026.8.3-r1 — 2026-08-18
+
+- Rebuilt against Home Assistant **2026.8.3**.
+- **Fix: PyAV (`av==17.0.1`) no longer builds from source.** A new Cython (3.1.7+)
+  rejects a redeclaration in `av/container/pyio.py` (`'seek_func' redeclared`).
+  `patch_av.sh` fetches the sdist by curl (not `pip download`, which builds the
+  un-patched source), applies av 18.1's one-line fix, and builds with
+  `--no-build-isolation`. Affects anyone building PyAV 17.0.1 from source.
+- **Build split into base + app images.** FFmpeg 8 and Cython (~30 min under
+  emulation, version-independent) now live in `ghcr.io/adyoull/ha-armv7-base`,
+  built once. HA version bumps rebuild only the app image. `REBUILD_BASE=1` forces
+  a base rebuild.
+- `build.sh` now orchestrates base + app + verify + push; parallelism defaults to
+  `BUILD_JOBS=8`.
+
+Tags: `2026.8.3-r1`, `2026.8.3`, `latest`
+
 ## 2026.8.2-r1 — 2026-08-13
 
 - Rebuilt against Home Assistant **2026.8.2** (upstream patch release).

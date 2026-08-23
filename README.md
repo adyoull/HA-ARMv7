@@ -9,7 +9,7 @@ This kit cross-compiles a *current* Home Assistant for armv7 on a Mac (or any
 x86/arm64 Docker host) and produces an image you can run on a Raspberry Pi 2/3
 on a 32-bit OS.
 
-Status: **working.** 2026.8.2 builds, boots, and restores a 2025.11.3 backup. In
+Status: **working.** 2026.8.3 builds, boots, and restores a 2025.11.3 backup. In
 production on a Raspberry Pi 3. Published images: `ghcr.io/adyoull/ha-armv7`.
 
 ## Quick start
@@ -21,19 +21,17 @@ chmod +x build.sh
 ./build.sh --fallback   # skip the build, pull the last official armv7 image (2025.11.3)
 ```
 
-For a build tailored to the integrations you actually use (smaller, faster,
-fewer things to go wrong):
+`build.sh` orchestrates the whole thing — refreshes the version pins, builds the
+base image if needed, builds the app on top, verifies the tricky packages
+(PyAV/pyatv/MFA) landed, and optionally pushes:
 
 ```bash
-docker buildx build --platform linux/arm/v7 \
-  --build-arg HA_VERSION=2026.8.2 \
-  --build-arg CONSTRAINTS=official-2026.8.2.txt \
-  --build-arg BUILD_JOBS=8 \
-  --build-arg INTEGRATIONS="default_config androidtv_remote backup cast co2signal \
-dlna_dmr dlna_dms duckdns forecast_solar hue ipp met mobile_app modbus nest onvif \
-openuv radio_browser samsungtv shelly sun tuya upnp wiz zha" \
-  -t ha-armv7:2026.8.2 -t ha-armv7:latest --load .
+./build.sh 2026.8.3 --push
 ```
+
+Config is via env: `GHCR_OWNER`, `REV`, `BUILD_JOBS`, `INTEGRATIONS`, and
+`REBUILD_BASE=1` to force a base rebuild. Edit the `INTEGRATIONS` default in
+`build.sh` to match what you actually run.
 
 ## Before you build
 
@@ -45,21 +43,29 @@ openuv radio_browser samsungtv shelly sun tuya upnp wiz zha" \
   cuts hours off. Drop it if you see `signal: killed` (OOM).
 - **Budget several hours** regardless. FFmpeg, numpy, PyAV and friends all compile
   from scratch on an emulated 32-bit CPU.
-- **Changing `HA_VERSION` busts the layer cache** at the HA-core install and
-  recompiles everything below it — but FFmpeg and the base toolchain sit *above*
-  that line, so they stay cached across bumps. A version bump recompiles the
-  Python packages, not FFmpeg.
+- **Changing `HA_VERSION` only rebuilds the app image.** FFmpeg, Cython, and the
+  toolchain live in the separate base image (`ghcr.io/adyoull/ha-armv7-base`), so
+  a version bump recompiles the HA Python packages, not the ~30-min base. Force a
+  base rebuild (e.g. to move FFmpeg) with `REBUILD_BASE=1 ./build.sh <ver>`.
 
 ## What the Dockerfile does, and why
 
 Each of these was an actual failure hit during this build. They're not
 speculative:
 
+The build is split into two images: **`Dockerfile.base`** (Python + toolchain +
+FFmpeg 8 + Cython — the slow, version-independent half, built once and pushed to
+`ghcr.io/adyoull/ha-armv7-base`) and **`Dockerfile`** (Home Assistant + the fixes,
+built `FROM` the base). A Home Assistant version bump only rebuilds the app half;
+FFmpeg and Cython never recompile.
+
 | Step | Reason |
 |---|---|
 | Base `python:3.14-slim-trixie` | HA 2026.x requires Python ≥3.14.2. This tag has an official `linux/arm/v7` variant. |
 | `libpcap0.8t64` (not `libpcap0.8`) | Debian trixie renamed it in the 64-bit `time_t` transition. |
-| **Build FFmpeg 8 from source** | Trixie ships FFmpeg 7.1, but current PyAV uses FFmpeg 8 APIs (`sws_free_context`, opaque `SwsContext`) and won't compile against 7.1. Not an armv7 issue — fails the same on x86. Pulling FFmpeg 8 from Debian testing would drag in a newer glibc, so it's built into `/usr/local`. Placed *before* the HA install so this layer caches across version bumps and only compiles once. |
+| **Base image split** (`Dockerfile.base`) | FFmpeg 8 and Cython take ~30 min to compile under emulation and don't depend on the HA version. Putting them in a separate base image (pushed to GHCR) means version bumps reuse them instead of recompiling. The base is resolved via a registry because the buildx `docker-container` driver resolves `FROM` against registries, not the local image store. |
+| **Build FFmpeg 8 from source** | Trixie ships FFmpeg 7.1, but current PyAV (`av==17.x`) uses FFmpeg 8 APIs (`sws_free_context`, opaque `SwsContext`) and won't compile against 7.1. Not an armv7 issue — fails the same on x86. Pulling FFmpeg 8 from Debian testing would drag in a newer glibc, so it's built into `/usr/local` in the base image. |
+| **Patch PyAV before building** (`patch_av.sh`) | HA pins `av==17.0.1`, whose `pyio.py` redeclares `seek_func: seek_func_t = …`. Cython 3.1.7+ (a *new* release) rejects that as `'seek_func' redeclared`, so `av` no longer builds from source. We fetch the sdist (via curl, not `pip download` — that runs the build hook on the un-patched source), apply the one-line fix av 18.1 shipped, and build with `--no-build-isolation` against the base's Cython + FFmpeg 8. armv7 hits this because it's the only arch with no prebuilt `av` wheel. |
 | `resolve_reqs.py` | `pip install homeassistant` installs **only the core framework**. Integration requirements live in per-integration `manifest.json`. This walks the graph and installs them at build time, so the Pi compiles nothing for core. |
 | `ALWAYS` list in `resolve_reqs.py` | HA components import each other *without* declaring it in `dependencies`, so a pure graph walk misses them: `analytics`/`homeassistant_alerts` → `hassio` → `aiohasupervisor`; `usb` → `serialx` → `aioesphomeapi`; plus `gtts`, `infrared_protocols`, `rf_protocols`. |
 | `official-<ver>.txt` constraints | Version pins lifted from the **official arm64 image** via `pip freeze`. No arm64 binaries are used — it's a parts list, so we install the exact versions HA ships. |
@@ -81,7 +87,7 @@ docker run --rm --platform linux/arm64 --entrypoint python \
 ```bash
 rm -rf /tmp/hatest && mkdir -p /tmp/hatest
 docker run -d --name ha-test --platform linux/arm/v7 \
-  -p 8123:8123 -v /tmp/hatest:/config ha-armv7:2026.8.2
+  -p 8123:8123 -v /tmp/hatest:/config ha-armv7:2026.8.3
 docker logs -f ha-test
 ```
 
@@ -91,7 +97,7 @@ if you rush it. Then open `http://localhost:8123`.
 
 **Test the restore, not just onboarding.** Drop a backup into
 `/tmp/hatest/backups/` and restart, or upload it via onboarding. If a 2025.11.3
-backup restores cleanly into 2026.8.2 here, the Pi migration is de-risked.
+backup restores cleanly into 2026.8.3 here, the Pi migration is de-risked.
 
 Verify nothing gets compiled at runtime (this should be empty):
 
@@ -105,19 +111,19 @@ Transfer the image:
 
 ```bash
 # Mac
-docker save ha-armv7:2026.8.2 | gzip -1 > ha-armv7-2026.8.2.tar.gz
-scp ha-armv7-2026.8.2.tar.gz pi@192.168.0.10:~/
+docker save ha-armv7:2026.8.3 | gzip -1 > ha-armv7-2026.8.3.tar.gz
+scp ha-armv7-2026.8.3.tar.gz pi@192.168.0.10:~/
 
 # Pi
-gunzip -c ha-armv7-2026.8.2.tar.gz | docker load
+gunzip -c ha-armv7-2026.8.3.tar.gz | docker load
 docker compose up -d
 ```
 
 Or via a registry:
 
 ```bash
-docker tag ha-armv7:2026.8.2 ghcr.io/<user>/ha-armv7:2026.8.2
-docker push ghcr.io/<user>/ha-armv7:2026.8.2   # needs a classic PAT with write:packages
+docker tag ha-armv7:2026.8.3 ghcr.io/<user>/ha-armv7:2026.8.3
+docker push ghcr.io/<user>/ha-armv7:2026.8.3   # needs a classic PAT with write:packages
 ```
 
 **Add swap on the Pi first.** A 1 GB Pi 2/3 will get OOM-killed compiling HACS
