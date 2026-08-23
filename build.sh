@@ -170,11 +170,18 @@ log "Verifying the tricky packages actually landed"
 docker run --rm --platform "$PLATFORM" --entrypoint python "$IMAGE:$TAG_VER" -c "
 from homeassistant.const import __version__
 from importlib.metadata import version
+from importlib.metadata import PackageNotFoundError
+import av  # noqa: F401 - hard-fail here if PyAV didn't build
+def opt(pkg):
+    try: return version(pkg)
+    except PackageNotFoundError: return 'MISSING'
 print('HA', __version__,
+      '| av', version('av'),
       '| pyatv', version('pyatv'),
       '| miniaudio', version('miniaudio'),
       '| pyotp', version('pyotp'),
-      '| PyQRCode', version('PyQRCode'))" \
+      '| PyQRCode', version('PyQRCode'),
+      '| bleak-smlight', opt('bleak-smlight'))" \
   || die "Verify failed - a required package is missing from the image."
 
 FAILED=$(docker run --rm --platform "$PLATFORM" --entrypoint sh "$IMAGE:$TAG_VER" \

@@ -125,6 +125,21 @@ RUN pip install "cffi>=1.17.1" -c /tmp/constraints.txt \
  && python -c "import pyatv, miniaudio; from importlib.metadata import version; print('pyatv', version('pyatv'), '/ miniaudio', version('miniaudio'))" \
       || echo "pyatv/miniaudio" >> /etc/ha-armv7-failed-requirements.txt
 
+# --- bleak-smlight (Bluetooth scanner backend) --------------------------------
+# HA's `bluetooth_adapters` enumerates BT scanner backends, one of which is
+# `smlight`, needing bleak-smlight==1.1.0. That package publishes ONLY compiled
+# wheels (no armv7), and the runtime installer won't fall back to its sdist, so
+# `bluetooth_adapters` setup FAILS - which degrades Bluetooth generally:
+#     Setup failed for 'bluetooth_adapters': Requirements for smlight not found:
+#     ['bleak-smlight==1.1.0']
+# It DOES have an sdist with a Cython extension, so we build it here (base image
+# has Cython + toolchain; poetry-core is its build backend). Building it makes the
+# backend load even with no SMLIGHT device attached. Non-fatal if it fails.
+RUN pip install "poetry-core>=2" "setuptools>=75.8.2" \
+ && pip install --no-binary bleak-smlight --no-build-isolation bleak-smlight -c /tmp/constraints.txt \
+ && python -c "import bleak_smlight; from importlib.metadata import version; print('bleak-smlight', version('bleak-smlight'))" \
+      || { echo "bleak-smlight" >> /etc/ha-armv7-failed-requirements.txt; echo "!!! bleak-smlight build failed - bluetooth_adapters/smlight backend degraded"; }
+
 # --- auth MFA modules ---------------------------------------------------------
 # TOTP MFA requirements live in homeassistant/auth/mfa_modules/totp.py, NOT in
 # any manifest.json, so resolve_reqs.py can't find them. HA installs them at
@@ -151,7 +166,14 @@ LABEL org.opencontainers.image.title="home-assistant-armv7" \
 VOLUME /config
 EXPOSE 8123
 
-HEALTHCHECK --interval=60s --timeout=10s --start-period=15m --retries=3 \
-  CMD curl -fsS http://127.0.0.1:8123/manifest.json || exit 1
+# Protocol-agnostic healthcheck. HA serves HTTPS on 8123 when `http:` has an
+# ssl_certificate (e.g. DuckDNS certs), and plain HTTP otherwise - so a fixed
+# http:// check fails on SSL setups. Try HTTPS (-k: 127.0.0.1 won't match the
+# cert name) then fall back to HTTP. --start-period is generous because first
+# boot on armv7 (and HACS dependency compiles) can take a long time.
+HEALTHCHECK --interval=60s --timeout=10s --start-period=20m --retries=3 \
+  CMD curl -fsSk https://127.0.0.1:8123/manifest.json \
+   || curl -fsS  http://127.0.0.1:8123/manifest.json \
+   || exit 1
 
 CMD ["python", "-m", "homeassistant", "--config", "/config"]

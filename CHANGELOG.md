@@ -3,6 +3,23 @@
 Unofficial ARMv7 (32-bit) builds of Home Assistant. All images published to
 `ghcr.io/adyoull/ha-armv7`.
 
+## 2026.8.3-r2 — 2026-08-18
+
+- **Fix: `bluetooth_adapters` setup failure.** HA's `bluetooth_adapters` pulls the
+  `smlight` scanner backend, needing `bleak-smlight==1.1.0`, which ships only
+  compiled wheels (no armv7) — so setup failed and Bluetooth was degraded. It has
+  an sdist with a Cython extension, so we now build it from source (base image
+  Cython + toolchain). Loads even with no SMLIGHT device attached.
+- **Fix: healthcheck.** The container healthcheck curled `http://` on 8123, which
+  fails when `http:` has an `ssl_certificate` (HA then serves HTTPS). Now tries
+  HTTPS (`-k`) then HTTP, so it works with or without SSL. Also overridable via
+  `docker-compose.yml` without rebuilding.
+- Build: `patch_av.sh` clears the stale `av` entry the requirements batch leaves
+  in the failed-requirements file; `build.sh` verify now imports `av` and reports
+  `bleak-smlight`.
+
+Tags: `2026.8.3-r2`, `2026.8.3`, `latest`
+
 ## 2026.8.3-r1 — 2026-08-18
 
 - Rebuilt against Home Assistant **2026.8.3**.

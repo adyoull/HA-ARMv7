@@ -41,4 +41,9 @@ echo "--- patch applied:"; grep -n 'seek_func' "$PYIO"
 echo "--- building av (no build isolation: base image Cython + FFmpeg 8)"
 pip install --no-build-isolation "$SRC"/av-*/ -c "$CONSTRAINTS"
 
+# The requirements batch (an earlier, cached layer) tries av from PyPI, fails on
+# the Cython issue, and logs it to the failed-requirements file. We just built av
+# correctly, so drop that stale entry to avoid a false "did NOT install" warning.
+sed -i '/^av==/d' /etc/ha-armv7-failed-requirements.txt 2>/dev/null || true
+
 rm -rf "$SRC"
