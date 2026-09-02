@@ -3,6 +3,15 @@
 Unofficial ARMv7 (32-bit) builds of Home Assistant. All images published to
 `ghcr.io/adyoull/ha-armv7`.
 
+## 2026.9.0-r1 — 2026-09-02
+
+- Rebuilt against Home Assistant **2026.9.0** (monthly minor release).
+- Refreshed dependency pins from the official 2026.9.0 arm64 image.
+- No build-recipe changes; base+app split, PyAV patch, Apple TV, `bleak-smlight`,
+  MFA, and the HTTPS healthcheck all carried over.
+
+Tags: `2026.9.0-r1`, `2026.9.0`, `latest`
+
 ## 2026.8.3-r2 — 2026-08-18
 
 - **Fix: `bluetooth_adapters` setup failure.** HA's `bluetooth_adapters` pulls the

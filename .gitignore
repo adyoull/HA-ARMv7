@@ -2,3 +2,4 @@
 *.tar.gz
 config/
 .DS_Store
+extractions/
