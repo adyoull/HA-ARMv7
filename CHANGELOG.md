@@ -3,6 +3,15 @@
 Unofficial ARMv7 (32-bit) builds of Home Assistant. All images published to
 `ghcr.io/adyoull/ha-armv7`.
 
+## 2026.9.1-r1 — 2026-09-07
+
+- Rebuilt against Home Assistant **2026.9.1** (patch release).
+- Refreshed dependency pins from the official 2026.9.1 arm64 image.
+- No build-recipe changes; base+app split, PyAV patch (`av` still 17.0.1), Apple
+  TV, `bleak-smlight`, MFA, and the HTTPS healthcheck all carried over.
+
+Tags: `2026.9.1-r1`, `2026.9.1`, `latest`
+
 ## 2026.9.0-r1 — 2026-09-02
 
 - Rebuilt against Home Assistant **2026.9.0** (monthly minor release).
