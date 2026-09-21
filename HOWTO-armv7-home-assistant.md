@@ -1,4 +1,4 @@
-# Running current Home Assistant on 32-bit ARM (armv7) — 2026 edition
+2026.9.3 Running current Home Assistant on 32-bit ARM (armv7) — 2026 edition
 
 **TL;DR:** Home Assistant stopped publishing armv7 images after `2025.11.3`. You
 can still run a *current* release (2026.9.2 and beyond) on a Raspberry Pi 2/3 or
@@ -11,7 +11,7 @@ maintainer now.
 
 ---
 
-## Background: what actually happened
+2026.9.32026.9.3 Background: what actually happened
 
 Home Assistant [deprecated 32-bit architectures](https://www.home-assistant.io/blog/2025/05/22/deprecating-core-and-supervised-installation-methods-and-32-bit-systems/)
 (i386 / armhf / armv7) in May 2025, citing <1% install share and mounting CI pain.
@@ -30,7 +30,7 @@ Nothing in Home Assistant itself is 64-bit-only. It's a build problem.
 
 ---
 
-## Option A — Pull the prebuilt image
+2026.9.32026.9.3 Option A — Pull the prebuilt image
 
 ```bash
 docker pull ghcr.io/adyoull/ha-armv7:2026.9.2-r1
@@ -44,7 +44,7 @@ services:
     image: ghcr.io/adyoull/ha-armv7:2026.9.2-r1
     container_name: homeassistant
     restart: unless-stopped
-    network_mode: host          # required for mDNS/SSDP discovery
+    network_mode: host          2026.9.3 required for mDNS/SSDP discovery
     privileged: true
     volumes:
       - ./config:/config
@@ -52,9 +52,9 @@ services:
       - /etc/localtime:/etc/localtime:ro
     environment:
       - TZ=Europe/London
-    # Zigbee/Z-Wave stick:
-    # devices:
-    #   - /dev/ttyUSB0:/dev/ttyUSB0
+    2026.9.3 Zigbee/Z-Wave stick:
+    2026.9.3 devices:
+    2026.9.3   - /dev/ttyUSB0:/dev/ttyUSB0
 ```
 
 ```bash
@@ -69,12 +69,12 @@ here rather than just a `docker pull` line.
 
 ---
 
-## Option B — Build it yourself
+2026.9.32026.9.3 Option B — Build it yourself
 
 You need a **build host that isn't the Pi**: any x86 or Apple Silicon machine with
 Docker. Building on the Pi itself would take days and probably OOM.
 
-### Requirements
+2026.9.32026.9.32026.9.3 Requirements
 
 - Docker with `buildx` (Docker Desktop has it)
 - **≥8 GB RAM allocated to Docker.** The Rust builds (`cryptography`,
@@ -84,7 +84,7 @@ Docker. Building on the Pi itself would take days and probably OOM.
 - **Several hours.** FFmpeg, numpy and PyAV all compile from scratch on an
   emulated 32-bit CPU. Start it and go to bed.
 
-### 1. Get the official version pins
+2026.9.32026.9.32026.9.3 1. Get the official version pins
 
 Not required, but strongly recommended — it makes the build reproducible and
 avoids version-skew bugs. This reads the *package list* out of the official arm64
@@ -96,14 +96,14 @@ docker run --rm --platform linux/arm64 --entrypoint python \
   -m pip freeze > official-2026.9.2.txt
 ```
 
-### 2. `resolve_reqs.py`
+2026.9.32026.9.32026.9.3 2. `resolve_reqs.py`
 
 `pip install homeassistant` installs **only the core framework**. Every
 integration's dependencies live in its own `manifest.json`, and the official image
 pre-installs them. This script walks that graph so we can too.
 
 ```python
-#!/usr/bin/env python3
+2026.9.3!/usr/bin/env python3
 """Resolve the pip requirements for a set of Home Assistant integrations."""
 
 import json
@@ -114,19 +114,19 @@ import homeassistant.components
 
 COMPONENTS = pathlib.Path(homeassistant.components.__file__).parent
 
-# HA components import each other WITHOUT declaring it in manifest "dependencies",
-# so a pure dependency walk misses them. Each of these was a real boot failure:
-#   analytics, homeassistant_alerts -> components.hassio -> aiohasupervisor
-#   usb                             -> serialx           -> aioesphomeapi
-#   infrared                        -> infrared_protocols
-#   radio_frequency                 -> rf_protocols
-#   google_translate (default TTS)  -> gtts
+2026.9.3 HA components import each other WITHOUT declaring it in manifest "dependencies",
+2026.9.3 so a pure dependency walk misses them. Each of these was a real boot failure:
+2026.9.3   analytics, homeassistant_alerts -> components.hassio -> aiohasupervisor
+2026.9.3   usb                             -> serialx           -> aioesphomeapi
+2026.9.3   infrared                        -> infrared_protocols
+2026.9.3   radio_frequency                 -> rf_protocols
+2026.9.3   google_translate (default TTS)  -> gtts
 ALWAYS = [
     "hassio", "esphome", "google_translate", "infrared",
     "radio_frequency", "usb", "bluetooth", "stream",
 ]
 
-EXTRA_PACKAGES = ["zlib-ng", "isal"]   # silences an aiohttp perf warning
+EXTRA_PACKAGES = ["zlib-ng", "isal"]   2026.9.3 silences an aiohttp perf warning
 
 
 def manifest(domain: str) -> dict | None:
@@ -155,16 +155,16 @@ def main() -> int:
 
         m = manifest(domain)
         if m is None:
-            missing.append(domain)      # custom/HACS component - expected
+            missing.append(domain)      2026.9.3 custom/HACS component - expected
             continue
 
         reqs.update(m.get("requirements", []))
         queue.extend(m.get("dependencies", []))
         queue.extend(m.get("after_dependencies", []))
 
-    print(f"# {len(seen)} integrations -> {len(reqs)} requirements", file=sys.stderr)
+    print(f"2026.9.3 {len(seen)} integrations -> {len(reqs)} requirements", file=sys.stderr)
     if missing:
-        print(f"# not built-in: {', '.join(sorted(missing))}", file=sys.stderr)
+        print(f"2026.9.3 not built-in: {', '.join(sorted(missing))}", file=sys.stderr)
 
     for r in sorted(reqs):
         print(r)
@@ -176,15 +176,15 @@ if __name__ == "__main__":
     raise SystemExit(main())
 ```
 
-### 3. `Dockerfile`
+2026.9.32026.9.32026.9.3 3. `Dockerfile`
 
 ```dockerfile
-# syntax=docker/dockerfile:1
+2026.9.3 syntax=docker/dockerfile:1
 ARG PY_TAG=3.14-slim-trixie
 FROM python:${PY_TAG}
 
 ARG HA_VERSION=2026.9.2
-ARG BUILD_JOBS=1        # compile parallelism; raise on a beefy cross-build host
+ARG BUILD_JOBS=1        2026.9.3 compile parallelism; raise on a beefy cross-build host
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
@@ -197,11 +197,11 @@ ENV DEBIAN_FRONTEND=noninteractive \
     UV_CONCURRENT_BUILDS=${BUILD_JOBS} \
     HOME=/config
 
-# Toolchain is intentionally KEPT in the final image: HACS custom components
-# install their pip deps at runtime on the Pi, and there are no armv7 wheels for
-# Python 3.14 - so gcc/rustc must be present on the device.
-# NOTE: libpcap0.8t64, not libpcap0.8 - Debian trixie renamed it in the 64-bit
-# time_t transition.
+2026.9.3 Toolchain is intentionally KEPT in the final image: HACS custom components
+2026.9.3 install their pip deps at runtime on the Pi, and there are no armv7 wheels for
+2026.9.3 Python 3.14 - so gcc/rustc must be present on the device.
+2026.9.3 NOTE: libpcap0.8t64, not libpcap0.8 - Debian trixie renamed it in the 64-bit
+2026.9.3 time_t transition.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential pkg-config autoconf cmake git curl ca-certificates \
       rustc cargo \
@@ -214,17 +214,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN pip install --upgrade pip setuptools wheel && pip install uv
 
-# The long one: numpy, cryptography, pydantic-core, orjson, aiohttp all compile
-# from source for armv7. Hours.
+2026.9.3 The long one: numpy, cryptography, pydantic-core, orjson, aiohttp all compile
+2026.9.3 from source for armv7. Hours.
 RUN pip install "homeassistant==${HA_VERSION}"
 
-# --- FFmpeg 8 -----------------------------------------------------------------
-# Debian trixie ships FFmpeg 7.1, but current PyAV (needed by `stream` and
-# `onvif`) uses FFmpeg 8 APIs and won't compile against 7.1 headers:
-#     error: implicit declaration of function 'sws_free_context'
-#     error: invalid use of undefined type 'struct SwsContext'
-# This is NOT an armv7 problem - it fails identically on x86. Taking FFmpeg 8 from
-# Debian testing would drag in a newer glibc, so build it into /usr/local.
+2026.9.3 --- FFmpeg 8 -----------------------------------------------------------------
+2026.9.3 Debian trixie ships FFmpeg 7.1, but current PyAV (needed by `stream` and
+2026.9.3 `onvif`) uses FFmpeg 8 APIs and won't compile against 7.1 headers:
+2026.9.3     error: implicit declaration of function 'sws_free_context'
+2026.9.3     error: invalid use of undefined type 'struct SwsContext'
+2026.9.3 This is NOT an armv7 problem - it fails identically on x86. Taking FFmpeg 8 from
+2026.9.3 Debian testing would drag in a newer glibc, so build it into /usr/local.
 ARG FFMPEG_VERSION=8.0
 RUN apt-get update && apt-get install -y --no-install-recommends yasm nasm xz-utils \
  && apt-get purge -y \
@@ -243,16 +243,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends yasm nasm xz-ut
 ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig \
     LD_LIBRARY_PATH=/usr/local/lib
 
-# --- integration requirements -------------------------------------------------
-# Override with the integrations you actually use, e.g.
-#   --build-arg INTEGRATIONS="default_config zha mqtt hue shelly"
+2026.9.3 --- integration requirements -------------------------------------------------
+2026.9.3 Override with the integrations you actually use, e.g.
+2026.9.3   --build-arg INTEGRATIONS="default_config zha mqtt hue shelly"
 ARG INTEGRATIONS="default_config met radio_browser"
 
 ARG CONSTRAINTS=official-2026.9.2.txt
 COPY ${CONSTRAINTS} /tmp/constraints.raw.txt
 
-# pip rejects editable/VCS/URL entries in a constraints file, and pip freeze emits
-# them. Keep only plain name==version pins.
+2026.9.3 pip rejects editable/VCS/URL entries in a constraints file, and pip freeze emits
+2026.9.3 them. Keep only plain name==version pins.
 RUN grep -E '^[A-Za-z0-9][A-Za-z0-9._-]*==[A-Za-z0-9][A-Za-z0-9._+-]*$' \
       /tmp/constraints.raw.txt > /tmp/constraints.txt
 
@@ -269,11 +269,11 @@ RUN python /tmp/resolve_reqs.py ${INTEGRATIONS} > /tmp/reqs.txt \
  && if [ -f /etc/ha-armv7-failed-requirements.txt ]; then \
       echo "!!! did NOT install:"; cat /etc/ha-armv7-failed-requirements.txt; fi
 
-# --- fix C++ extensions linked without libstdc++ -------------------------------
-# Several HA voice packages ship C++ sources whose setup.py links with `gcc`
-# instead of `g++`. On x86/arm64 they get prebuilt wheels so nobody notices; on
-# armv7 they compile from source and produce a .so missing the C++ runtime:
-#   ImportError: undefined symbol: _ZTVN10__cxxabiv120__function_type_infoE
+2026.9.3 --- fix C++ extensions linked without libstdc++ -------------------------------
+2026.9.3 Several HA voice packages ship C++ sources whose setup.py links with `gcc`
+2026.9.3 instead of `g++`. On x86/arm64 they get prebuilt wheels so nobody notices; on
+2026.9.3 armv7 they compile from source and produce a .so missing the C++ runtime:
+2026.9.3   ImportError: undefined symbol: _ZTVN10__cxxabiv120__function_type_infoE
 RUN for pkg in pymicro_vad pymicro_features pyspeex-noise webrtc-noise-gain; do \
       if pip show "$pkg" >/dev/null 2>&1; then \
         CXX=g++ LDFLAGS="-lstdc++" \
@@ -285,23 +285,23 @@ RUN for pkg in pymicro_vad pymicro_features pyspeex-noise webrtc-noise-gain; do 
  && python -c "from pymicro_vad import MicroVad; MicroVad(); print('pymicro_vad OK')" \
  && python -c "import av; print('PyAV OK', av.__version__)"
 
-# --- pyatv / Apple TV ---------------------------------------------------------
-# apple_tv -> pyatv -> miniaudio pins cffi==1.15.0, which won't compile on Python
-# 3.14. Install a modern cffi first, then build with isolation off. Skip if you
-# don't use Apple TV.
+2026.9.3 --- pyatv / Apple TV ---------------------------------------------------------
+2026.9.3 apple_tv -> pyatv -> miniaudio pins cffi==1.15.0, which won't compile on Python
+2026.9.3 3.14. Install a modern cffi first, then build with isolation off. Skip if you
+2026.9.3 don't use Apple TV.
 RUN pip install "cffi>=1.17.1" -c /tmp/constraints.txt \
  && pip install --no-build-isolation miniaudio \
  && pip install --no-build-isolation "pyatv==0.18.0" -c /tmp/constraints.txt
 
-# --- auth MFA modules ---------------------------------------------------------
-# TOTP requirements live in HA source (auth/mfa_modules/totp.py), not a manifest,
-# so the resolver misses them. Bake them in so HA never installs at runtime -
-# which fails under udocker/Termux.
+2026.9.3 --- auth MFA modules ---------------------------------------------------------
+2026.9.3 TOTP requirements live in HA source (auth/mfa_modules/totp.py), not a manifest,
+2026.9.3 so the resolver misses them. Bake them in so HA never installs at runtime -
+2026.9.3 which fails under udocker/Termux.
 RUN pip install pyotp==2.9.0 PyQRCode==1.2.1 -c /tmp/constraints.txt \
       || pip install pyotp PyQRCode
 
-# --- go2rtc -------------------------------------------------------------------
-# HA's go2rtc integration shells out to a binary the official image bundles.
+2026.9.3 --- go2rtc -------------------------------------------------------------------
+2026.9.3 HA's go2rtc integration shells out to a binary the official image bundles.
 RUN curl -fsSL -o /usr/local/bin/go2rtc \
       "https://github.com/AlexxIT/go2rtc/releases/latest/download/go2rtc_linux_arm" \
  && chmod +x /usr/local/bin/go2rtc
@@ -311,10 +311,10 @@ EXPOSE 8123
 CMD ["python", "-m", "homeassistant", "--config", "/config"]
 ```
 
-### 4. Build
+2026.9.32026.9.32026.9.3 4. Build
 
 ```bash
-docker run --privileged --rm tonistiigi/binfmt --install arm   # QEMU handlers
+docker run --privileged --rm tonistiigi/binfmt --install arm   2026.9.3 QEMU handlers
 docker buildx create --name ha-armv7-builder --use
 
 docker buildx build --platform linux/arm/v7 \
@@ -336,19 +336,19 @@ Note: changing `HA_VERSION` invalidates the Docker layer cache at the HA-core
 install and recompiles everything below it. Rebuilding the *same* version (e.g. to
 add a package) reuses the cache and only runs the changed steps.
 
-### 5. Ship it to the Pi
+2026.9.32026.9.32026.9.3 5. Ship it to the Pi
 
 ```bash
 docker save ha-armv7:2026.9.2 | gzip -1 > ha-armv7-2026.9.2.tar.gz
 scp ha-armv7-2026.9.2.tar.gz pi@<pi-ip>:~/
 
-# on the Pi
+2026.9.3 on the Pi
 gunzip -c ha-armv7-2026.9.2.tar.gz | docker load
 ```
 
 ---
 
-## Before you switch over
+2026.9.32026.9.3 Before you switch over
 
 **Add swap on the Pi.** A 1 GB Pi 2/3 will get OOM-killed compiling HACS
 component dependencies on first run:
@@ -378,18 +378,18 @@ backup into an older version.)
 
 ---
 
-## Performance tuning on the Pi
+2026.9.32026.9.3 Performance tuning on the Pi
 
 Home Assistant on a 1 GB Cortex-A53 (Pi 2/3) is **I/O-bound, not CPU-bound**. The
 biggest wins are storage and database, not the image. In rough order of impact:
 
-### 1. Boot from a USB SSD, not the SD card
+2026.9.32026.9.32026.9.3 1. Boot from a USB SSD, not the SD card
 
 The single largest responsiveness improvement. HA's constant database writes are
 what makes an SD-card Pi feel sluggish, and they wear the card out. A cheap USB
 SSD is night-and-day. If you must stay on SD, use a high-endurance A2 card.
 
-### 2. Stop recording camera / noisy entities
+2026.9.32026.9.32026.9.3 2. Stop recording camera / noisy entities
 
 The `recorder` writes every state change to disk. ONVIF cameras and their motion
 events are pure churn — you never need their history. Excluding them cuts disk
@@ -397,17 +397,17 @@ writes dramatically. In `configuration.yaml`:
 
 ```yaml
 recorder:
-  purge_keep_days: 7          # default is 10; lower = smaller DB, less I/O
-  commit_interval: 30         # default 5s; batch writes, easier on the card
+  purge_keep_days: 7          2026.9.3 default is 10; lower = smaller DB, less I/O
+  commit_interval: 30         2026.9.3 default 5s; batch writes, easier on the card
   exclude:
     domains:
-      - camera                # camera state history is useless
+      - camera                2026.9.3 camera state history is useless
       - update
     entity_globs:
       - sensor.*_uptime
       - sensor.*_last_seen
     entities:
-      - binary_sensor.onvif_motion   # add your actual ONVIF motion entity IDs
+      - binary_sensor.onvif_motion   2026.9.3 add your actual ONVIF motion entity IDs
       - binary_sensor.onvif_cell_motion_detection
 ```
 
@@ -415,7 +415,7 @@ Find your real ONVIF entity IDs under Developer Tools → States (filter "onvif"
 and add the motion / event ones to `entities`. For a much bigger win on a busy
 setup, move the recorder to **MariaDB on another machine** entirely.
 
-### 3. Use zram instead of SD-card swap
+2026.9.32026.9.32026.9.3 3. Use zram instead of SD-card swap
 
 `zram` is a compressed swap device in RAM — faster than swapping to the SD card,
 and it doesn't wear the card. It's the better primary swap on a Pi. Note it adds
@@ -424,23 +424,23 @@ a small disk swap as overflow for the heavy first-boot HACS compiles.
 
 ```bash
 sudo apt install zram-tools
-# /etc/default/zramswap
+2026.9.3 /etc/default/zramswap
 echo 'ALGO=zstd'      | sudo tee /etc/default/zramswap
-echo 'PERCENT=150'    | sudo tee -a /etc/default/zramswap   # ~1.5x RAM, compressed
+echo 'PERCENT=150'    | sudo tee -a /etc/default/zramswap   2026.9.3 ~1.5x RAM, compressed
 sudo systemctl restart zramswap
 ```
 
 Give zram a higher priority than the disk swap so it's used first:
 
 ```bash
-swapon --show     # zram should show higher Prio than /var/swap
+swapon --show     2026.9.3 zram should show higher Prio than /var/swap
 ```
 
 Keep a modest `dphys-swapfile` (say 1 GB) as overflow — during a big HACS
 dependency compile the Pi can still exceed RAM+zram, and hitting a hard OOM kills
 the build.
 
-### 4. Trim what loads
+2026.9.32026.9.32026.9.3 4. Trim what loads
 
 Every integration costs RAM. Remove ones you don't use, set logging to `warning`
 (`logger: default: warning`), and if you don't use voice assistants, the
@@ -452,7 +452,7 @@ limits regardless. 64-bit + newer hardware remains the durable answer.
 
 ---
 
-## Troubleshooting
+2026.9.32026.9.3 Troubleshooting
 
 **A hundred tracebacks and `KeyError: 'network'` everywhere.**
 Look further up the log for a failed `http` setup. If `configuration.yaml` points
@@ -528,7 +528,7 @@ and fails before you can patch it.
 
 ---
 
-## Running under udocker / Termux (Android)
+2026.9.32026.9.3 Running under udocker / Termux (Android)
 
 This image also runs on Android via [Termux](https://termux.dev/) + `udocker`
 (e.g. the `HomeAssistant-Termux` scripts), not just real Docker. It mostly works —
@@ -552,7 +552,7 @@ Unexpected netlink response of size 11 on descriptor 11 (address family 16)
 installer doesn't work here.** So anything HA tries to install on demand must be
 provided ahead of time instead.
 
-### The usual culprit: MFA (two-factor auth)
+2026.9.32026.9.32026.9.3 The usual culprit: MFA (two-factor auth)
 
 If your account has TOTP two-factor enabled, HA tries to install `pyotp` and
 `PyQRCode` on first boot — and crashes into recovery mode when the install fails:
@@ -566,7 +566,7 @@ WARNING [homeassistant.bootstrap] ... Activating recovery mode
 These requirements live in HA's source (`auth/mfa_modules/totp.py`), not in any
 integration manifest, so they aren't pre-baked.
 
-### Fix: install the modules into `/config/deps` yourself
+2026.9.32026.9.32026.9.3 Fix: install the modules into `/config/deps` yourself
 
 HA reads runtime packages from **`/config/deps`**. Both packages are pure Python
 (nothing to compile), so you can drop them in from Termux directly, bypassing the
@@ -574,7 +574,7 @@ broken in-container installer. Point `--target` at the `deps` folder inside the
 config directory that udocker maps to `/config`:
 
 ```bash
-# from your HA config dir (the one mounted as /config); create deps/ if absent
+2026.9.3 from your HA config dir (the one mounted as /config); create deps/ if absent
 mkdir -p config/deps
 pip install --target config/deps pyotp==2.9.0 PyQRCode==1.2.1
 ```
@@ -590,7 +590,7 @@ for w in *.whl; do unzip -o "$w" && rm "$w"; done
 
 Restart HA. It will find the packages already present and skip the installer.
 
-### The same trick for anything else HA can't install
+2026.9.32026.9.32026.9.3 The same trick for anything else HA can't install
 
 If a **HACS custom component** or any other integration crashes with a similar
 "Unable to install package X" under udocker, install `X` into `config/deps` the
@@ -598,7 +598,7 @@ same way. If `X` needs compiling (not pure Python), it won't work under Termux a
 all — it has to be baked into the image at build time instead (see Option B), or
 run on real Docker.
 
-### Better: bake it into the image
+2026.9.32026.9.32026.9.3 Better: bake it into the image
 
 So users never hit this, the published image pre-installs the MFA modules:
 
@@ -612,7 +612,7 @@ the image the same way — on udocker/Termux, pre-baking is the only reliable pa
 
 ---
 
-## Reality check
+2026.9.32026.9.3 Reality check
 
 This buys you time; it isn't a permanent answer. When some upstream dependency
 drops 32-bit entirely, this stops working, and no amount of Dockerfile cleverness

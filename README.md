@@ -1,4 +1,4 @@
-# Home Assistant on ARMv7 (32-bit) — unofficial build
+2026.9.3 Home Assistant on ARMv7 (32-bit) — unofficial build
 
 Home Assistant [deprecated 32-bit](https://www.home-assistant.io/blog/2025/05/22/deprecating-core-and-supervised-installation-methods-and-32-bit-systems/)
 (i386 / armhf / armv7) in May 2025. **The last official armv7 image is
@@ -12,13 +12,13 @@ on a 32-bit OS.
 Status: **working.** 2026.9.2 builds, boots, and restores a 2025.11.3 backup. In
 production on a Raspberry Pi 3. Published images: `ghcr.io/adyoull/ha-armv7`.
 
-## Quick start
+2026.9.32026.9.3 Quick start
 
 ```bash
 chmod +x build.sh
-./build.sh              # latest HA from source, armv7
-./build.sh 2026.5.4     # a specific version
-./build.sh --fallback   # skip the build, pull the last official armv7 image (2025.11.3)
+./build.sh              2026.9.3 latest HA from source, armv7
+./build.sh 2026.5.4     2026.9.3 a specific version
+./build.sh --fallback   2026.9.3 skip the build, pull the last official armv7 image (2025.11.3)
 ```
 
 `build.sh` orchestrates the whole thing — refreshes the version pins, builds the
@@ -33,7 +33,7 @@ Config is via env: `GHCR_OWNER`, `REV`, `BUILD_JOBS`, `INTEGRATIONS`, and
 `REBUILD_BASE=1` to force a base rebuild. Edit the `INTEGRATIONS` default in
 `build.sh` to match what you actually run.
 
-## Before you build
+2026.9.32026.9.3 Before you build
 
 - **Docker Desktop → Settings → Resources: ≥8 GB RAM, ≥40 GB disk.** The Rust
   builds (`cryptography`, `pydantic-core`) get OOM-killed at 4 GB under QEMU.
@@ -48,7 +48,7 @@ Config is via env: `GHCR_OWNER`, `REV`, `BUILD_JOBS`, `INTEGRATIONS`, and
   a version bump recompiles the HA Python packages, not the ~30-min base. Force a
   base rebuild (e.g. to move FFmpeg) with `REBUILD_BASE=1 ./build.sh <ver>`.
 
-## What the Dockerfile does, and why
+2026.9.32026.9.3 What the Dockerfile does, and why
 
 Each of these was an actual failure hit during this build. They're not
 speculative:
@@ -82,7 +82,7 @@ docker run --rm --platform linux/arm64 --entrypoint python \
   ghcr.io/home-assistant/home-assistant:<version> -m pip freeze > official-<version>.txt
 ```
 
-## Test on the Mac before touching the Pi
+2026.9.32026.9.3 Test on the Mac before touching the Pi
 
 ```bash
 rm -rf /tmp/hatest && mkdir -p /tmp/hatest
@@ -105,16 +105,16 @@ Verify nothing gets compiled at runtime (this should be empty):
 ls /tmp/hatest/deps
 ```
 
-## Deploy to the Pi
+2026.9.32026.9.3 Deploy to the Pi
 
 Transfer the image:
 
 ```bash
-# Mac
+2026.9.3 Mac
 docker save ha-armv7:2026.9.2 | gzip -1 > ha-armv7-2026.9.2.tar.gz
 scp ha-armv7-2026.9.2.tar.gz pi@192.168.0.10:~/
 
-# Pi
+2026.9.3 Pi
 gunzip -c ha-armv7-2026.9.2.tar.gz | docker load
 docker compose up -d
 ```
@@ -123,7 +123,7 @@ Or via a registry:
 
 ```bash
 docker tag ha-armv7:2026.9.2 ghcr.io/<user>/ha-armv7:2026.9.2
-docker push ghcr.io/<user>/ha-armv7:2026.9.2   # needs a classic PAT with write:packages
+docker push ghcr.io/<user>/ha-armv7:2026.9.2   2026.9.3 needs a classic PAT with write:packages
 ```
 
 **Add swap on the Pi first.** A 1 GB Pi 2/3 will get OOM-killed compiling HACS
@@ -141,7 +141,7 @@ Keep the old image loaded as a rollback:
 docker pull --platform linux/arm/v7 ghcr.io/home-assistant/armv7-homeassistant:2025.11.3
 ```
 
-## Gotchas found the hard way
+2026.9.32026.9.3 Gotchas found the hard way
 
 - **A missing SSL cert takes down everything.** If `http:` in `configuration.yaml`
   points at a cert file that doesn't exist, `http` fails validation — and
@@ -156,23 +156,23 @@ docker pull --platform linux/arm/v7 ghcr.io/home-assistant/armv7-homeassistant:2
 - **First boot after restore is slow.** HACS components compile their deps on the
   Pi. HA may exit mid-way; start it again and it continues.
 
-## Reality check
+2026.9.32026.9.3 Reality check
 
 This is unsupported. HA won't accept issue reports for it. It works today, and it
 will keep working until some upstream dependency drops 32-bit entirely — at which
 point the answer is a 64-bit OS (a Pi 3 *can* run 64-bit Raspberry Pi OS) or new
 hardware. Treat this as buying time, not as a permanent position.
 
-## Sources
+2026.9.32026.9.3 Sources
 
 - [Deprecating Core and Supervised installation methods, and 32-bit systems](https://www.home-assistant.io/blog/2025/05/22/deprecating-core-and-supervised-installation-methods-and-32-bit-systems/)
-- [Drop support for the armv7 architecture (architecture discussion #1230)](https://github.com/home-assistant/architecture/discussions/1230)
+- [Drop support for the armv7 architecture (architecture discussion 2026.9.31230)](https://github.com/home-assistant/architecture/discussions/1230)
 - [Install Home Assistant Core 2025.12 on armv7 — Lesterpig's Blog](https://blog.lesterpig.com/post/install-home-assistant-core-2025.12-on-armv7/)
 - [python — Docker Official Image (arm32v7 variants)](https://hub.docker.com/_/python)
 
 ---
 
-## License & attribution
+2026.9.32026.9.3 License & attribution
 
 The build tooling in this repository (Dockerfile, scripts, documentation) is
 licensed **MIT** — see [`LICENSE`](./LICENSE).
