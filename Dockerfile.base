@@ -1,10 +1,10 @@
 # syntax=docker/dockerfile:1
 #
-# ha-armv7-base : Python 3.14 + build toolchain + FFmpeg 8, for armv7 (32-bit).
+# ha-armv7-base : Python 3.14 + build toolchain + FFmpeg 9, for armv7 (32-bit).
 # Copyright (C) 2026 Andrew Youll
 #
 # This is the SLOW, STABLE half of the build. It contains everything that does
-# NOT depend on the Home Assistant version - the apt toolchain and the FFmpeg 8
+# NOT depend on the Home Assistant version - the apt toolchain and the FFmpeg 9
 # compile. Build it ONCE, tag it, and the app image (Dockerfile) builds FROM it.
 # Because it's a separate image, a Home Assistant version bump can never touch
 # FFmpeg - it's physically in a different image, immune to cache eviction, Docker
@@ -55,15 +55,15 @@ RUN pip install --upgrade pip setuptools wheel \
 RUN pip install "cython<4" "setuptools>=77" wheel \
  && python -c "import Cython; print('Cython', Cython.__version__)"
 
-# --- FFmpeg 8 -----------------------------------------------------------------
-# Debian trixie ships FFmpeg 7.1, but current PyAV (av==17.x, pulled in by
-# `stream`/`onvif`) uses FFmpeg 8 APIs - sws_free_context, opaque struct
-# SwsContext - so it fails to compile against 7.1 headers:
-#     error: implicit declaration of function 'sws_free_context'
-#     error: invalid use of undefined type 'struct SwsContext'
-# This is NOT an armv7 problem; it fails the same way on x86. Pulling FFmpeg 8
-# from Debian testing would drag in a newer glibc, so build it into /usr/local.
-ARG FFMPEG_VERSION=8.0
+# --- FFmpeg (built from source) -----------------------------------------------
+# PyAV must be built against the FFmpeg major it targets, and that moves with HA's
+# `av` pin. Debian trixie only ships FFmpeg 7.1, so we build the needed FFmpeg
+# into /usr/local. Keep FFMPEG_VERSION in step with the `av` pin:
+#     av 17.x  -> FFmpeg 8.0   (sws_free_context, opaque SwsContext)
+#     av 19.x  -> FFmpeg 9.0   (SWS_UNSTABLE, AVCOL_TRC_V_LOG, AVCOL_PRI_V_GAMUT)
+# A too-old FFmpeg fails the av build with "<symbol> undeclared" (not an armv7
+# issue - same on x86). Bumping this requires REBUILD_BASE=1.
+ARG FFMPEG_VERSION=9.0.2
 
 RUN apt-get update && apt-get install -y --no-install-recommends yasm nasm xz-utils \
  && apt-get purge -y \
@@ -82,9 +82,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends yasm nasm xz-ut
  && rm -rf /tmp/ffmpeg /tmp/ffmpeg.tar.xz \
  && ffmpeg -version | head -1
 
-# Make sure PyAV's pkg-config finds FFmpeg 8 in /usr/local, not Debian's 7.1
+# Make sure PyAV's pkg-config finds our FFmpeg in /usr/local, not Debian's 7.1
 ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig \
     LD_LIBRARY_PATH=/usr/local/lib
 
 LABEL org.opencontainers.image.title="ha-armv7-base" \
-      org.opencontainers.image.description="Python 3.14 + toolchain + FFmpeg 8 base for unofficial armv7 Home Assistant"
+      org.opencontainers.image.description="Python 3.14 + toolchain + FFmpeg 9 base for unofficial armv7 Home Assistant"

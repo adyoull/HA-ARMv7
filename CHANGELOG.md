@@ -3,6 +3,19 @@
 Unofficial ARMv7 (32-bit) builds of Home Assistant. All images published to
 `ghcr.io/adyoull/ha-armv7`.
 
+## 2026.10.1-r1 — 2026-10-12
+
+- Rebuilt against Home Assistant **2026.10.1**.
+- Refreshed dependency pins from the official 2026.10.1 arm64 image.
+- **Base image: FFmpeg 8.0 → 9.0.2.** HA 2026.10 bumped `av` 17.0.1 → 19.0.0, and
+  PyAV 19 needs FFmpeg 9 (`SWS_UNSTABLE`, `AVCOL_TRC_V_LOG`, `AVCOL_PRI_V_GAMUT`);
+  the old FFmpeg 8 base failed the `av` build with "`<symbol>` undeclared". Base
+  rebuilt with `FFMPEG_VERSION=9.0.2`.
+- The `patch_av.sh` Cython redeclaration patch now no-ops (av 18.1+ fixed it
+  upstream); kept for older `av` pins and as a guard.
+
+Tags: `2026.10.1-r1`, `2026.10.1`, `latest`
+
 ## 2026.9.3-r1 — 2026-09-21
 
 - Rebuilt against Home Assistant **2026.9.3** (patch release).
