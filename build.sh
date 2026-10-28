@@ -105,14 +105,31 @@ TAG_REV="${HA_VERSION}-${REV}"
 # Read the package list from the OFFICIAL arm64 image (no arm64 binaries used -
 # it's a parts list) so we install the exact versions HA ships.
 CONSTRAINTS="official-${HA_VERSION}.txt"
-if [[ -f "$CONSTRAINTS" ]]; then
-  log "Using existing constraints: $CONSTRAINTS"
+# Reuse only a VALID existing file. An aborted earlier run can leave an empty or
+# partial constraints file; reusing it makes the Dockerfile's `grep` match nothing
+# and fail cryptically. Treat <10 pinned lines as invalid and refetch.
+valid_constraints() { [[ -f "$1" ]] && [[ "$(grep -cE '^[A-Za-z0-9][A-Za-z0-9._-]*==' "$1")" -ge 10 ]]; }
+
+if valid_constraints "$CONSTRAINTS"; then
+  log "Using existing constraints: $CONSTRAINTS ($(grep -cE '==' "$CONSTRAINTS") pins)"
 else
+  [[ -f "$CONSTRAINTS" ]] && log "Existing $CONSTRAINTS looks empty/invalid - refetching"
   log "Fetching version pins from official arm64 image -> $CONSTRAINTS"
+  # Use importlib.metadata, NOT `pip freeze`: newer HA images ship without pip,
+  # so `pip freeze` prints nothing and silently leaves an empty constraints file.
   docker run --rm --platform linux/arm64 --entrypoint python \
-    "ghcr.io/home-assistant/home-assistant:${HA_VERSION}" \
-    -m pip freeze > "$CONSTRAINTS" \
+    "ghcr.io/home-assistant/home-assistant:${HA_VERSION}" -c '
+from importlib.metadata import distributions
+seen = set()
+for d in distributions():
+    name = d.metadata["Name"]
+    if name and d.version and name.lower() not in seen:
+        seen.add(name.lower())
+        print(f"{name}=={d.version}")
+' | sort -f > "$CONSTRAINTS" \
     || die "Could not pull official arm64 image for $HA_VERSION (does the version exist yet?)"
+  valid_constraints "$CONSTRAINTS" \
+    || die "Fetched $CONSTRAINTS is empty/invalid ($(wc -l < "$CONSTRAINTS") lines). Check the arm64 image pull."
 fi
 
 # --------------------------------------------------------------- base image ---

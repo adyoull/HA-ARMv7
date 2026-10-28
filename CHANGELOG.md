@@ -3,6 +3,14 @@
 Unofficial ARMv7 (32-bit) builds of Home Assistant. All images published to
 `ghcr.io/adyoull/ha-armv7`.
 
+## 2026.10.4-r1 — 2026-10-27
+
+- Rebuilt against Home Assistant **2026.10.4**.
+- Refreshed dependency pins from the official 2026.10.4 arm64 image.
+- Patch release. No build-recipe changes; all armv7 fixes carried over.
+
+Tags: `2026.10.4-r1`, `2026.10.4`, `latest`
+
 ## 2026.10.1-r1 — 2026-10-12
 
 - Rebuilt against Home Assistant **2026.10.1**.
